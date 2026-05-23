@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>未形 / primordia</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="stage" aria-label="未形数字生命培养皿">
+        <canvas id="dish" width="960" height="640"></canvas>
+      </section>
+
+      <aside class="panel" aria-label="培养皿控制台">
+        <header>
+          <p class="eyebrow">primordia</p>
+          <h1>未形</h1>
+          <p class="subtitle">在信息环境中寻找生命的开始</p>
+        </header>
+
+        <div class="controls" aria-label="仿真控制">
+          <button id="toggle" type="button">暂停</button>
+          <button id="step" type="button">单步</button>
+          <button id="reset" type="button">重置</button>
+        </div>
+
+        <label class="slider">
+          <span>速度</span>
+          <input id="speed" type="range" min="1" max="16" value="4">
+        </label>
+
+        <dl class="metrics">
+          <div><dt>tick</dt><dd id="m-tick">0</dd></div>
+          <div><dt>生命</dt><dd id="m-agents">0</dd></div>
+          <div><dt>平均能量</dt><dd id="m-energy">0</dd></div>
+          <div><dt>最高世代</dt><dd id="m-generation">0</dd></div>
+          <div><dt>出生</dt><dd id="m-births">0</dd></div>
+          <div><dt>死亡</dt><dd id="m-deaths">0</dd></div>
+        </dl>
+
+        <div class="legend" aria-label="图例">
+          <span><i class="resource"></i>资源</span>
+          <span><i class="trace"></i>痕迹</span>
+          <span><i class="agent"></i>生命</span>
+        </div>
+      </aside>
+    </main>
+
+    <script src="../src/primordia.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
+
