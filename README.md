@@ -68,4 +68,5 @@ node scripts/smoke-test.js
 - [生命映射](docs/02-life-mapping.md)
 - [第一阶段规格](docs/03-phase-one-spec.md)
 - [路线图](docs/04-roadmap.md)
+- [LLM 语义器官研究线](docs/future/llm-semantic-organ.md)
 - [AI 工作区](ai/README.md)

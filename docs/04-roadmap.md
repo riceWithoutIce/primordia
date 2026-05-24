@@ -36,3 +36,10 @@
 - 可解释的变异谱系
 - 人类可干预的环境设计
 
+## Future Epic：LLM 语义器官
+
+- Phase 3 之后才考虑引入。
+- LLM 作为高成本语义器官，不作为基础生命。
+- 第一实现必须使用 mock adapter，不直接接真实 API。
+- 实施前必须重新审核 Phase 1-3 的生态、安全和审计结果。
+- 详见 [LLM 语义器官研究线](future/llm-semantic-organ.md)。
