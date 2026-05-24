@@ -23,20 +23,20 @@
 primordia/
   ai/                    AI 线程上下文、项目内 skills、协作角色与提示模板
   docs/                  项目理念、边界、规格与路线图
-  src/                   不依赖浏览器的仿真内核
-  web/                   静态 Canvas 培养皿界面
-  scripts/               本地检查脚本
+  src/core/              不依赖浏览器的 TypeScript 仿真内核
+  src/app/               Vite + Canvas 2D 培养皿界面
+  tests/                 Vitest 测试
 ```
 
 ## 快速开始
 
-直接打开：
+安装依赖：
 
-```text
-web/index.html
+```powershell
+npm install
 ```
 
-或启动一个本地静态服务器：
+启动本地 Vite 开发服务器：
 
 ```powershell
 npm run dev
@@ -45,19 +45,13 @@ npm run dev
 然后访问：
 
 ```text
-http://127.0.0.1:5173/web/
+http://127.0.0.1:5173/
 ```
 
-运行基础检查：
+运行检查：
 
 ```powershell
 npm run check
-```
-
-如果当前环境没有 `npm`，也可以直接运行：
-
-```powershell
-node scripts/smoke-test.js
 ```
 
 ## 文档入口

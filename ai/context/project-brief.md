@@ -21,13 +21,14 @@
 
 ## 当前阶段
 
-Phase 0 到 Phase 1 的交界：
+Phase 1.1：工程迁移已完成，进入用户本地手动验证前。
 
 - 项目起源已经沉积到 `docs/origin.md`。
 - 基础文档结构已经建立。
-- 第一版仿真内核位于 `src/primordia.js`。
-- 第一版静态培养皿界面位于 `web/`。
+- 第一版 TypeScript 仿真内核位于 `src/core/primordia.ts`。
+- 第一版 Vite + Canvas 培养皿界面位于 `src/app/`，入口为根目录 `index.html`。
 - AI 协作结构位于 `ai/`。
+- 2026-05-24：已从静态 JS 原型迁移到 TypeScript + Vite；`npm run check` 与 `npm run build` 已通过自动验证；用户尚未进行本地浏览器手动验证。
 
 ## 当前优先级
 

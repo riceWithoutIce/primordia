@@ -6,8 +6,8 @@
 
 1. `docs/origin.md`
 2. `docs/03-phase-one-spec.md`
-3. `src/primordia.js`
-4. `scripts/smoke-test.js`
+3. `src/core/primordia.ts`
+4. `tests/smoke.test.ts`
 
 ## 工作原则
 
