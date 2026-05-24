@@ -6,10 +6,6 @@
 
 第一阶段目标是在二维信息环境中模拟一群简单 agent。它们消耗 token 能量，感知局部资源，移动、采集、留下痕迹、繁殖、变异，并在环境压力下自然选择。
 
-## 项目入口
-
-- GitHub Project: [riceWithoutIce/projects/5](https://github.com/users/riceWithoutIce/projects/5)
-
 ## 安全原则
 
 未形不研究、实现或鼓励以下行为：
