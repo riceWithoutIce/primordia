@@ -1,6 +1,6 @@
 # 第一阶段规格
 
-## 基础条件
+## 基础公理
 
 第一阶段培养皿是封闭边界内持续流动的本地信息生物圈。外部能量只能以有限通量进入环境，不能直接奖励 agent。
 
@@ -29,7 +29,7 @@
 - resource 是通量在网格中的局部沉积，不均匀分布会形成生态位。
 - trace 是环境记忆，随时间衰减，但会在衰减前影响后续行动和压力。
 - pressure 是过度活动后的环境反馈，会提高局部代谢成本。
-- death 不只是删除，后续版本应把死亡残留部分回收为资源、痕迹或压力。
+- death 不只是删除，第一阶段应把死亡残留部分回收为 resource、trace 或 pressure。
 
 第一阶段能量循环：
 
@@ -58,7 +58,7 @@ energy input -> resource field -> agent harvest -> movement/metabolism/reproduct
 每个 agent 必须通过自己的生存循环维持存在：
 
 ```text
-sense -> spend energy -> act -> change environment -> harvest resource -> repair/reproduce -> die or persist -> return residue
+sense -> spend energy -> act -> change environment -> harvest resource -> reproduce -> die or persist -> return residue
 ```
 
 第一阶段要求：
@@ -68,6 +68,7 @@ sense -> spend energy -> act -> change environment -> harvest resource -> repair
 - 行动必须改变 energy 或 environment。
 - 资源必须从 environment 获得。
 - 繁殖必须消耗自身资源。
+- 修复机制属于后续阶段；第一阶段只要求代谢、采集、繁殖、死亡与回收闭环成立。
 - 死亡必须可发生，不是异常状态。
 - 死亡应把残余能量或影响回收到 resource、trace 或 pressure。
 - 没有资源输入或无法采集时，生命应自然消失。
