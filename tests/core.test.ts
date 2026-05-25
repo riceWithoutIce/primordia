@@ -1,11 +1,29 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULTS,
+  GENOME_BOUNDS,
   Simulation,
+  constrainGenome,
+  mutateGenome,
   type EnvironmentCell,
   type EnvironmentMode,
+  type Genome,
   type SimulationConfigPatch
 } from "../src/core/primordia";
+
+function testGenome(overrides: Partial<Genome> = {}): Genome {
+  return {
+    senseRadius: 1,
+    metabolism: 0.5,
+    moveCost: 0.2,
+    harvestRate: 1.2,
+    traceAffinity: 0,
+    resourceAffinity: 1,
+    reproductionThreshold: 90,
+    mutationRate: 0.04,
+    ...overrides
+  };
+}
 
 describe("typed simulation core", () => {
   it("constructs from a typed config patch without browser globals", () => {
@@ -197,6 +215,148 @@ describe("typed simulation core", () => {
     expect(child?.generation).toBe(parent.generation + 1);
     expect(sim.metrics().lineageCount).toBe(1);
     expect(sim.metrics().maxGeneration).toBe(1);
+  });
+
+  it("constrains spawned genomes to fixed bounds", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      seed: 40
+    });
+    const agent = sim.spawnAgent(
+      0,
+      0,
+      testGenome({
+        senseRadius: 99,
+        metabolism: -10,
+        moveCost: -10,
+        harvestRate: 99,
+        traceAffinity: 99,
+        resourceAffinity: -10,
+        reproductionThreshold: -10,
+        mutationRate: 99
+      }),
+      20
+    );
+
+    for (const key of Object.keys(GENOME_BOUNDS) as Array<keyof Genome>) {
+      expect(agent.genome[key]).toBeGreaterThanOrEqual(GENOME_BOUNDS[key].min);
+      expect(agent.genome[key]).toBeLessThanOrEqual(GENOME_BOUNDS[key].max);
+    }
+  });
+
+  it("keeps mutations inside genome bounds", () => {
+    const child = mutateGenome(
+      testGenome({
+        senseRadius: 99,
+        metabolism: 99,
+        moveCost: 99,
+        harvestRate: 99,
+        traceAffinity: 99,
+        resourceAffinity: 99,
+        reproductionThreshold: 1,
+        mutationRate: 1
+      }),
+      () => 0
+    );
+
+    for (const key of Object.keys(GENOME_BOUNDS) as Array<keyof Genome>) {
+      expect(child[key]).toBeGreaterThanOrEqual(GENOME_BOUNDS[key].min);
+      expect(child[key]).toBeLessThanOrEqual(GENOME_BOUNDS[key].max);
+    }
+  });
+
+  it("charges ecological costs for broad sensing, high harvest, and early reproduction", () => {
+    const modest = constrainGenome(
+      testGenome({
+        senseRadius: 1,
+        metabolism: GENOME_BOUNDS.metabolism.min,
+        moveCost: GENOME_BOUNDS.moveCost.min,
+        harvestRate: 1.4,
+        resourceAffinity: 1.3,
+        reproductionThreshold: 78
+      })
+    );
+    const costly = constrainGenome(
+      testGenome({
+        senseRadius: 3,
+        metabolism: GENOME_BOUNDS.metabolism.min,
+        moveCost: GENOME_BOUNDS.moveCost.min,
+        harvestRate: GENOME_BOUNDS.harvestRate.max,
+        resourceAffinity: GENOME_BOUNDS.resourceAffinity.max,
+        reproductionThreshold: GENOME_BOUNDS.reproductionThreshold.min,
+        traceAffinity: GENOME_BOUNDS.traceAffinity.max
+      })
+    );
+
+    expect(costly.metabolism).toBeGreaterThan(modest.metabolism);
+    expect(costly.moveCost).toBeGreaterThan(modest.moveCost);
+  });
+
+  it("turns aggressive harvesting and early reproduction into environmental cost", () => {
+    const highHarvest = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      seed: 44
+    });
+    const agent = highHarvest.spawnAgent(
+      1,
+      1,
+      testGenome({
+        harvestRate: GENOME_BOUNDS.harvestRate.max
+      }),
+      20
+    );
+    const idx = highHarvest.index(1, 1);
+    highHarvest.resources[idx] = GENOME_BOUNDS.harvestRate.max;
+    const pressureBeforeHarvest = highHarvest.pressure[idx];
+
+    highHarvest.harvestAgent(agent);
+
+    expect(highHarvest.pressure[idx]).toBeGreaterThan(pressureBeforeHarvest);
+
+    const early = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      reproductionShare: 0.5,
+      seed: 45
+    });
+    const late = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      reproductionShare: 0.5,
+      seed: 45
+    });
+    const earlyParent = early.spawnAgent(
+      1,
+      1,
+      testGenome({
+        reproductionThreshold: GENOME_BOUNDS.reproductionThreshold.min
+      }),
+      100
+    );
+    const lateParent = late.spawnAgent(
+      1,
+      1,
+      testGenome({
+        reproductionThreshold: GENOME_BOUNDS.reproductionThreshold.max
+      }),
+      100
+    );
+    const pressureBeforeReproduction = early.pressure[early.index(1, 1)];
+    const earlyChild = early.reproduce(earlyParent);
+    const lateChild = late.reproduce(lateParent);
+
+    expect(earlyChild.energy).toBeLessThan(lateChild.energy);
+    expect(early.pressure[early.index(1, 1)]).toBeGreaterThan(pressureBeforeReproduction);
   });
 
   it("records starvation deaths and returns residue to the environment", () => {

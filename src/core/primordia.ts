@@ -45,6 +45,11 @@ export interface Genome {
   mutationRate: number;
 }
 
+export interface GenomeRange {
+  min: number;
+  max: number;
+}
+
 export interface EnvironmentCell {
   resource: number;
   trace: number;
@@ -97,6 +102,17 @@ export const DEFAULTS: SimulationConfig = {
   seed: 1337
 };
 
+export const GENOME_BOUNDS: Record<keyof Genome, GenomeRange> = {
+  senseRadius: { min: 1, max: 3 },
+  metabolism: { min: 0.28, max: 1.8 },
+  moveCost: { min: 0.08, max: 0.75 },
+  harvestRate: { min: 0.45, max: 4.2 },
+  traceAffinity: { min: -1.8, max: 1.8 },
+  resourceAffinity: { min: 0.35, max: 4.4 },
+  reproductionThreshold: { min: 46, max: 170 },
+  mutationRate: { min: 0.008, max: 0.18 }
+};
+
 const MOVE_CANDIDATES: readonly MoveVector[] = [
   { dx: 0, dy: 0 },
   { dx: 1, dy: 0 },
@@ -133,7 +149,7 @@ function createDeathStats(): DeathStats {
 }
 
 export function createGenome(random: RandomSource): Genome {
-  return {
+  return constrainGenome({
     senseRadius: random() < 0.72 ? 1 : 2,
     metabolism: 0.52 + random() * 0.5,
     moveCost: 0.18 + random() * 0.2,
@@ -142,6 +158,52 @@ export function createGenome(random: RandomSource): Genome {
     resourceAffinity: 1.3 + random() * 1.4,
     reproductionThreshold: 78 + random() * 42,
     mutationRate: 0.035 + random() * 0.055
+  });
+}
+
+export function constrainGenome(genome: Genome): Genome {
+  const constrained: Genome = {
+    senseRadius: Math.round(clamp(genome.senseRadius, GENOME_BOUNDS.senseRadius.min, GENOME_BOUNDS.senseRadius.max)),
+    metabolism: clamp(genome.metabolism, GENOME_BOUNDS.metabolism.min, GENOME_BOUNDS.metabolism.max),
+    moveCost: clamp(genome.moveCost, GENOME_BOUNDS.moveCost.min, GENOME_BOUNDS.moveCost.max),
+    harvestRate: clamp(genome.harvestRate, GENOME_BOUNDS.harvestRate.min, GENOME_BOUNDS.harvestRate.max),
+    traceAffinity: clamp(genome.traceAffinity, GENOME_BOUNDS.traceAffinity.min, GENOME_BOUNDS.traceAffinity.max),
+    resourceAffinity: clamp(
+      genome.resourceAffinity,
+      GENOME_BOUNDS.resourceAffinity.min,
+      GENOME_BOUNDS.resourceAffinity.max
+    ),
+    reproductionThreshold: clamp(
+      genome.reproductionThreshold,
+      GENOME_BOUNDS.reproductionThreshold.min,
+      GENOME_BOUNDS.reproductionThreshold.max
+    ),
+    mutationRate: clamp(genome.mutationRate, GENOME_BOUNDS.mutationRate.min, GENOME_BOUNDS.mutationRate.max)
+  };
+
+  return enforceGenomeTradeoffs(constrained);
+}
+
+function enforceGenomeTradeoffs(genome: Genome): Genome {
+  const senseLoad = Math.max(0, genome.senseRadius - 1);
+  const harvestLoad = Math.max(0, genome.harvestRate - 1.4);
+  const earlyReproductionLoad = Math.max(0, 78 - genome.reproductionThreshold);
+  const resourceFocusLoad = Math.max(0, genome.resourceAffinity - 1.3);
+  const traceLoad = Math.abs(genome.traceAffinity);
+
+  const metabolismFloor =
+    GENOME_BOUNDS.metabolism.min +
+    senseLoad * 0.08 +
+    harvestLoad * 0.07 +
+    earlyReproductionLoad * 0.004 +
+    resourceFocusLoad * 0.025 +
+    traceLoad * 0.015;
+  const moveCostFloor = GENOME_BOUNDS.moveCost.min + senseLoad * 0.035 + harvestLoad * 0.018;
+
+  return {
+    ...genome,
+    metabolism: clamp(Math.max(genome.metabolism, metabolismFloor), GENOME_BOUNDS.metabolism.min, GENOME_BOUNDS.metabolism.max),
+    moveCost: clamp(Math.max(genome.moveCost, moveCostFloor), GENOME_BOUNDS.moveCost.min, GENOME_BOUNDS.moveCost.max)
   };
 }
 
@@ -166,14 +228,18 @@ export function mutateGenome(parent: Genome, random: RandomSource): Genome {
     child[key] = value;
   }
 
-  child.metabolism = clamp(child.metabolism, 0.28, 1.8);
-  child.moveCost = clamp(child.moveCost, 0.08, 0.75);
-  child.harvestRate = clamp(child.harvestRate, 0.45, 4.2);
-  child.traceAffinity = clamp(child.traceAffinity, -1.8, 1.8);
-  child.resourceAffinity = clamp(child.resourceAffinity, 0.35, 4.4);
-  child.reproductionThreshold = clamp(child.reproductionThreshold, 46, 170);
-  child.mutationRate = clamp(child.mutationRate, 0.008, 0.18);
-  return child;
+  return constrainGenome(child);
+}
+
+function harvestPressure(genome: Genome, harvested: number): number {
+  const harvestLoad = Math.max(0, genome.harvestRate - 1.4);
+  return harvested * (0.006 + harvestLoad * 0.006);
+}
+
+function reproductionEfficiency(genome: Genome): number {
+  const bounds = GENOME_BOUNDS.reproductionThreshold;
+  const thresholdPosition = (genome.reproductionThreshold - bounds.min) / (bounds.max - bounds.min);
+  return clamp(0.72 + thresholdPosition * 0.22, 0.72, 0.94);
 }
 
 export class Simulation {
@@ -265,6 +331,7 @@ export class Simulation {
     const resolvedLineageId = lineageId ?? this.nextLineageId++;
     this.nextLineageId = Math.max(this.nextLineageId, resolvedLineageId + 1);
 
+    const boundedGenome = constrainGenome(genome);
     const agent: Agent = {
       id: this.nextAgentId,
       lineageId: resolvedLineageId,
@@ -273,7 +340,7 @@ export class Simulation {
       energy,
       age: 0,
       generation,
-      genome,
+      genome: boundedGenome,
       lastAction: "born"
     };
     this.nextAgentId += 1;
@@ -385,6 +452,7 @@ export class Simulation {
     const harvested = Math.min(this.resources[idx], agent.genome.harvestRate);
     this.resources[idx] -= harvested;
     agent.energy += harvested;
+    this.pressure[idx] = clamp(this.pressure[idx] + harvestPressure(agent.genome, harvested), 0, 4);
     return harvested;
   }
 
@@ -458,12 +526,18 @@ export class Simulation {
 
   reproduce(parent: Agent): Agent {
     const share = this.config.reproductionShare;
-    const childEnergy = parent.energy * share;
+    const allocatedEnergy = parent.energy * share;
+    const childEnergy = allocatedEnergy * reproductionEfficiency(parent.genome);
+    const reproductionWaste = allocatedEnergy - childEnergy;
     parent.energy *= 1 - share;
 
     const childGenome = mutateGenome(parent.genome, this.random);
     const offsetX = this.random() < 0.5 ? -1 : 1;
     const offsetY = this.random() < 0.5 ? -1 : 1;
+    const idx = this.index(parent.x, parent.y);
+
+    this.traces[idx] = clamp(this.traces[idx] + reproductionWaste * 0.02, 0, 12);
+    this.pressure[idx] = clamp(this.pressure[idx] + reproductionWaste * 0.006, 0, 4);
 
     parent.lastAction = "divide";
     return {

@@ -37,6 +37,7 @@ Phase 1.1：工程迁移已完成，进入用户本地手动验证前。
 - 2026-05-25：Phase 1.5 death reasons and residue recovery 已完成初版：记录 `starvation`、`pressure`、`overflow` 死亡原因，死亡残余回收到 resource/trace/pressure，UI 显示死亡原因计数；Vitest 覆盖三类死亡原因与残余回收。
 - 2026-05-25：Phase 1.5 浏览器人工验证通过：agent 移动、tick 变化、按钮与速度滑块可用；当前生命运动轨迹仍显得随机、生命感较初级，后续应通过资源梯度、痕迹偏好、谱系差异和生态压力继续强化可感知的方向性。
 - 2026-05-25：Phase 1.6 lineage tracking 已完成初版：初代 agent 获得独立 `lineageId`，后代继承父代谱系，metrics 与 UI 显示当前存活谱系数量；Vitest 覆盖初代谱系独立性、繁殖谱系继承和最高世代。
+- 2026-05-25：Phase 1.7 genome bounds and tradeoffs 已完成初版：集中 `GENOME_BOUNDS` 与 `constrainGenome`，spawn 和 mutation 都收束 genome；大感知、高采集、高资源偏好、高痕迹亲和、低繁殖阈值会转化为代谢、移动成本、局部 pressure 或繁殖损耗；Vitest 覆盖 genome 边界、突变边界和生态代价。
 
 ## 当前优先级
 
