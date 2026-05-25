@@ -2,6 +2,8 @@ export type RandomSource = () => number;
 
 export type AgentAction = "born" | "death" | "harvest" | "search" | "divide";
 
+export type DeathReason = "starvation" | "pressure" | "overflow";
+
 export type EnvironmentMode = "closed" | "flux";
 
 export interface GridPoint {
@@ -56,6 +58,13 @@ export interface Agent extends GridPoint {
   generation: number;
   genome: Genome;
   lastAction: AgentAction;
+  deathReason?: DeathReason;
+}
+
+export interface DeathStats {
+  starvation: number;
+  pressure: number;
+  overflow: number;
 }
 
 export interface Metrics {
@@ -65,6 +74,7 @@ export interface Metrics {
   deaths: number;
   averageEnergy: number;
   maxGeneration: number;
+  deathReasons: DeathStats;
   totalResource: number;
   totalTrace: number;
 }
@@ -110,6 +120,14 @@ export function mulberry32(seed: number): RandomSource {
 
 function mergeConfig(config?: SimulationConfigPatch): SimulationConfig {
   return { ...DEFAULTS, ...config };
+}
+
+function createDeathStats(): DeathStats {
+  return {
+    starvation: 0,
+    pressure: 0,
+    overflow: 0
+  };
 }
 
 export function createGenome(random: RandomSource): Genome {
@@ -166,6 +184,7 @@ export class Simulation {
   tickCount = 0;
   births = 0;
   deaths = 0;
+  deathReasons: DeathStats = createDeathStats();
   resources: Float32Array;
   traces: Float32Array;
   pressure: Float32Array;
@@ -199,6 +218,7 @@ export class Simulation {
     this.tickCount = 0;
     this.births = 0;
     this.deaths = 0;
+    this.deathReasons = createDeathStats();
     this.agents = [];
 
     for (let i = 0; i < this.size; i += 1) {
@@ -283,16 +303,18 @@ export class Simulation {
       if (agent.energy > 0) {
         survivors.push(agent);
       } else {
-        this.deaths += 1;
+        this.handleAgentDeath(agent, agent.deathReason ?? "starvation");
       }
     }
     this.agents = survivors;
 
     if (this.agents.length > this.config.maxAgents) {
       this.agents.sort((a, b) => b.energy - a.energy);
-      const overflow = this.agents.length - this.config.maxAgents;
-      this.agents.length = this.config.maxAgents;
-      this.deaths += overflow;
+      const removed = this.agents.splice(this.config.maxAgents);
+      for (const agent of removed) {
+        this.markDeath(agent, "overflow");
+        this.handleAgentDeath(agent, "overflow");
+      }
     }
   }
 
@@ -330,14 +352,17 @@ export class Simulation {
 
   spendMetabolism(agent: Agent): boolean {
     const here = this.index(agent.x, agent.y);
+    const energyBefore = agent.energy;
+    const metabolismCost = agent.genome.metabolism;
     const pressureCost = this.pressure[here] * 0.08;
 
-    agent.energy -= agent.genome.metabolism + pressureCost;
+    agent.energy -= metabolismCost + pressureCost;
     if (agent.energy > 0) {
       return true;
     }
 
-    agent.lastAction = "death";
+    const wouldSurviveWithoutPressure = energyBefore - metabolismCost > 0;
+    this.markDeath(agent, wouldSurviveWithoutPressure && pressureCost > 0 ? "pressure" : "starvation");
     return false;
   }
 
@@ -358,6 +383,9 @@ export class Simulation {
   leaveTrace(agent: Agent, harvested: number): void {
     const idx = this.index(agent.x, agent.y);
     this.traces[idx] = clamp(this.traces[idx] + 0.5 + harvested * 0.09, 0, 12);
+    if (agent.energy <= 0) {
+      this.markDeath(agent, "starvation");
+    }
   }
 
   tryReproduce(agent: Agent): Agent | null {
@@ -366,6 +394,29 @@ export class Simulation {
     }
 
     return null;
+  }
+
+  markDeath(agent: Agent, reason: DeathReason): void {
+    agent.lastAction = "death";
+    agent.deathReason = reason;
+  }
+
+  handleAgentDeath(agent: Agent, reason: DeathReason): void {
+    this.deaths += 1;
+    this.deathReasons[reason] += 1;
+    this.recoverResidue(agent, reason);
+  }
+
+  recoverResidue(agent: Agent, reason: DeathReason): void {
+    const idx = this.index(agent.x, agent.y);
+    const remainingEnergy = Math.max(0, agent.energy);
+    const resourceResidue = remainingEnergy * 0.35;
+    const traceResidue = 1 + Math.min(agent.age * 0.02, 1.5);
+    const pressureResidue = reason === "pressure" ? 0.8 : reason === "overflow" ? 0.45 : 0.25;
+
+    this.resources[idx] = clamp(this.resources[idx] + resourceResidue, 0, this.config.resourceCap);
+    this.traces[idx] = clamp(this.traces[idx] + traceResidue, 0, 12);
+    this.pressure[idx] = clamp(this.pressure[idx] + pressureResidue, 0, 4);
   }
 
   chooseMove(agent: Agent): MoveVector {
@@ -441,6 +492,7 @@ export class Simulation {
       deaths: this.deaths,
       averageEnergy: this.agents.length ? totalEnergy / this.agents.length : 0,
       maxGeneration,
+      deathReasons: { ...this.deathReasons },
       totalResource,
       totalTrace
     };

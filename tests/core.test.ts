@@ -103,6 +103,7 @@ describe("typed simulation core", () => {
 
     expect(metrics.agents).toBe(0);
     expect(metrics.deaths).toBeGreaterThanOrEqual(6);
+    expect(metrics.deathReasons.starvation).toBeGreaterThanOrEqual(6);
     expect(metrics.births).toBe(6);
   });
 
@@ -139,5 +140,98 @@ describe("typed simulation core", () => {
     expect(agent.energy).not.toBe(beforeEnergy);
     expect(after.totalResource).toBeLessThan(beforeResource);
     expect(after.totalTrace).toBeGreaterThan(beforeTrace);
+  });
+
+  it("records starvation deaths and returns residue to the environment", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      resourceCap: 10,
+      seed: 41
+    });
+    const genome = {
+      senseRadius: 1,
+      metabolism: 2,
+      moveCost: 0,
+      harvestRate: 0,
+      traceAffinity: 0,
+      resourceAffinity: 0,
+      reproductionThreshold: 999,
+      mutationRate: 0
+    };
+    sim.spawnAgent(1, 1, genome, 1);
+    const before = sim.cellAt(1, 1);
+
+    sim.tick();
+    const after = sim.cellAt(1, 1);
+    const metrics = sim.metrics();
+
+    expect(metrics.agents).toBe(0);
+    expect(metrics.deaths).toBe(1);
+    expect(metrics.deathReasons.starvation).toBe(1);
+    expect(after.trace).toBeGreaterThan(before.trace);
+    expect(after.pressure).toBeGreaterThan(before.pressure);
+  });
+
+  it("records pressure deaths separately from starvation", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      seed: 43
+    });
+    const genome = {
+      senseRadius: 1,
+      metabolism: 1,
+      moveCost: 0,
+      harvestRate: 0,
+      traceAffinity: 0,
+      resourceAffinity: 0,
+      reproductionThreshold: 999,
+      mutationRate: 0
+    };
+    sim.spawnAgent(2, 2, genome, 1.2);
+    sim.pressure[sim.index(2, 2)] = 4;
+
+    sim.tick();
+
+    expect(sim.metrics().deathReasons.pressure).toBe(1);
+    expect(sim.metrics().deathReasons.starvation).toBe(0);
+  });
+
+  it("records overflow deaths and recovers their residue", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      maxAgents: 1,
+      resourceCap: 10,
+      seed: 47
+    });
+    const genome = {
+      senseRadius: 1,
+      metabolism: 0.1,
+      moveCost: 0,
+      harvestRate: 0,
+      traceAffinity: 0,
+      resourceAffinity: 0,
+      reproductionThreshold: 999,
+      mutationRate: 0
+    };
+    sim.spawnAgent(0, 0, genome, 5);
+    sim.spawnAgent(1, 0, genome, 10);
+    const before = sim.metrics().totalResource;
+
+    sim.tick();
+    const metrics = sim.metrics();
+
+    expect(metrics.agents).toBe(1);
+    expect(metrics.deaths).toBe(1);
+    expect(metrics.deathReasons.overflow).toBe(1);
+    expect(metrics.totalResource).toBeGreaterThan(before);
   });
 });

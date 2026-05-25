@@ -17,7 +17,10 @@ const metrics = {
   energy: getElement<HTMLElement>("m-energy"),
   generation: getElement<HTMLElement>("m-generation"),
   births: getElement<HTMLElement>("m-births"),
-  deaths: getElement<HTMLElement>("m-deaths")
+  deaths: getElement<HTMLElement>("m-deaths"),
+  deathStarvation: getElement<HTMLElement>("m-death-starvation"),
+  deathPressure: getElement<HTMLElement>("m-death-pressure"),
+  deathOverflow: getElement<HTMLElement>("m-death-overflow")
 };
 
 toggle.addEventListener("click", () => {
@@ -128,6 +131,9 @@ function updateMetrics(): void {
   metrics.generation.textContent = String(m.maxGeneration);
   metrics.births.textContent = String(m.births);
   metrics.deaths.textContent = String(m.deaths);
+  metrics.deathStarvation.textContent = String(m.deathReasons.starvation);
+  metrics.deathPressure.textContent = String(m.deathReasons.pressure);
+  metrics.deathOverflow.textContent = String(m.deathReasons.overflow);
 }
 
 function loop(): void {
