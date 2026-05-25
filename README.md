@@ -30,6 +30,14 @@ primordia/
 
 ## 快速开始
 
+Windows 一键启动：
+
+```powershell
+.\start-dev.bat
+```
+
+脚本会在需要时安装依赖，启动本地 Vite 开发服务器，并打开浏览器访问培养皿。
+
 安装依赖：
 
 ```powershell

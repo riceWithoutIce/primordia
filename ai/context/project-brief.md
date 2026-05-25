@@ -28,7 +28,9 @@ Phase 1.1：工程迁移已完成，进入用户本地手动验证前。
 - 第一版 TypeScript 仿真内核位于 `src/core/primordia.ts`。
 - 第一版 Vite + Canvas 培养皿界面位于 `src/app/`，入口为根目录 `index.html`。
 - AI 协作结构位于 `ai/`。
-- 2026-05-24：已从静态 JS 原型迁移到 TypeScript + Vite；`npm run check` 与 `npm run build` 已通过自动验证；用户尚未进行本地浏览器手动验证。
+- 2026-05-24：已从静态 JS 原型迁移到 TypeScript + Vite；`npm run check` 与 `npm run build` 已通过自动验证。
+- 2026-05-25：用户已完成 Windows 本地浏览器手动验证：agent 移动、tick 变化、暂停/继续/单步/重置、速度滑块均正常。Chrome Issues 面板出现 dev 环境 CSP eval 提醒，但未在 app 源码或生产构建中发现对应问题。
+- Windows 一键启动入口位于 `start-dev.bat`，实际逻辑位于 `scripts/start-dev.ps1`。
 
 ## 当前优先级
 
