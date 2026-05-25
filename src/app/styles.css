@@ -118,6 +118,17 @@ button:hover {
   font-size: 14px;
 }
 
+.slider span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.slider output {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 input[type="range"] {
   width: 100%;
   accent-color: var(--agent);

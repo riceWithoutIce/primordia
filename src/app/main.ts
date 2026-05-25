@@ -5,8 +5,11 @@ const { canvas, ctx } = getCanvasContext();
 
 let sim = new Simulation();
 let running = true;
+let lastFrameTime = 0;
+let tickAccumulator = 0;
 
 const speed = getElement<HTMLInputElement>("speed");
+const speedLabel = getElement<HTMLOutputElement>("speed-label");
 const toggle = getElement<HTMLButtonElement>("toggle");
 const step = getElement<HTMLButtonElement>("step");
 const reset = getElement<HTMLButtonElement>("reset");
@@ -24,6 +27,12 @@ const metrics = {
   deathOverflow: getElement<HTMLElement>("m-death-overflow")
 };
 
+const TICK_RATES = [0.2, 0.5, 1, 2, 4, 8, 16, 32, 64] as const;
+
+speed.addEventListener("input", () => {
+  updateSpeedLabel();
+});
+
 toggle.addEventListener("click", () => {
   running = !running;
   toggle.textContent = running ? "暂停" : "继续";
@@ -38,6 +47,7 @@ reset.addEventListener("click", () => {
   sim.reset({
     seed: Math.floor(Math.random() * 1000000)
   });
+  tickAccumulator = 0;
   running = true;
   toggle.textContent = "暂停";
   render();
@@ -138,13 +148,42 @@ function updateMetrics(): void {
   metrics.deathOverflow.textContent = String(m.deathReasons.overflow);
 }
 
-function loop(): void {
+function tickRate(): number {
+  const index = Math.max(0, Math.min(TICK_RATES.length - 1, Number(speed.value)));
+  return TICK_RATES[index];
+}
+
+function updateSpeedLabel(): void {
+  speedLabel.textContent = `${tickRate()} tick/s`;
+}
+
+function advanceSimulation(now: number): void {
   if (running) {
-    sim.step(Number(speed.value));
+    if (!lastFrameTime) {
+      lastFrameTime = now;
+      return;
+    }
+
+    const elapsedSeconds = Math.min((now - lastFrameTime) / 1000, 0.5);
+    tickAccumulator += elapsedSeconds * tickRate();
+    const ticks = Math.floor(tickAccumulator);
+
+    if (ticks > 0) {
+      sim.step(ticks);
+      tickAccumulator -= ticks;
+    }
+  } else {
+    tickAccumulator = 0;
   }
+}
+
+function loop(now: number): void {
+  advanceSimulation(now);
+  lastFrameTime = now;
   render();
   requestAnimationFrame(loop);
 }
 
 render();
+updateSpeedLabel();
 requestAnimationFrame(loop);
