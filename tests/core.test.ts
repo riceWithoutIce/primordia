@@ -85,4 +85,59 @@ describe("typed simulation core", () => {
     expect(flux.metrics().totalResource).toBeLessThanOrEqual(flux.size * flux.config.resourceCap);
     expect(closed.metrics().totalResource).toBe(closedBefore);
   });
+
+  it("lets agents naturally disappear in a closed environment without resources", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 8,
+      height: 8,
+      initialAgents: 6,
+      initialEnergy: 4,
+      resourceGrowth: 0,
+      resourceCap: 0,
+      seed: 23
+    });
+
+    sim.step(80);
+    const metrics = sim.metrics();
+
+    expect(metrics.agents).toBe(0);
+    expect(metrics.deaths).toBeGreaterThanOrEqual(6);
+    expect(metrics.births).toBe(6);
+  });
+
+  it("changes energy or environment during a surviving agent action", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      resourceCap: 10,
+      seed: 31
+    });
+    const genome = {
+      senseRadius: 1,
+      metabolism: 0.1,
+      moveCost: 0,
+      harvestRate: 1,
+      traceAffinity: 0,
+      resourceAffinity: 1,
+      reproductionThreshold: 999,
+      mutationRate: 0
+    };
+    const agent = sim.spawnAgent(0, 0, genome, 10);
+    const startIndex = sim.index(agent.x, agent.y);
+    sim.resources[startIndex] = 2;
+    const beforeEnergy = agent.energy;
+    const beforeResource = sim.metrics().totalResource;
+    const beforeTrace = sim.metrics().totalTrace;
+
+    sim.tick();
+
+    const after = sim.metrics();
+    expect(after.agents).toBe(1);
+    expect(agent.energy).not.toBe(beforeEnergy);
+    expect(after.totalResource).toBeLessThan(beforeResource);
+    expect(after.totalTrace).toBeGreaterThan(beforeTrace);
+  });
 });

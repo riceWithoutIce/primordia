@@ -33,6 +33,7 @@ Phase 1.1：工程迁移已完成，进入用户本地手动验证前。
 - Windows 一键启动入口位于 `start-dev.bat`，实际逻辑位于 `scripts/start-dev.ps1`。
 - 2026-05-25：Phase 1.2 typed simulation core 已完成初版：明确 `SimulationConfig`、`Agent`、`Genome`、`EnvironmentCell`、`Metrics` 等 core 类型，新增 typed 环境读取 API，并用 Vitest 覆盖 DOM-free core、配置 patch、环境 cell 快照和 deterministic replay。
 - 2026-05-25：Phase 1.3 environment flux modes 已完成初版：`SimulationConfig.environmentMode` 支持 `closed` 与 `flux`；`closed` 不再生成新 resource，`flux` 保持有限资源通量；Vitest 覆盖 closed 无输入、flux 有界输入与 deterministic 行为。
+- 2026-05-25：Phase 1.4 agent survival loop 已完成初版：tick 内部明确为代谢、移动、采集、留痕、尝试繁殖、死亡移除；Vitest 覆盖 closed 无资源自然灭绝，以及存活行动会改变 energy 或 environment。
 
 ## 当前优先级
 

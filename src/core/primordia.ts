@@ -312,30 +312,56 @@ export class Simulation {
   }
 
   liveAgent(agent: Agent): Agent | null {
-    const genome = agent.genome;
-    const here = this.index(agent.x, agent.y);
-    const pressureCost = this.pressure[here] * 0.08;
-
     agent.age += 1;
-    agent.energy -= genome.metabolism + pressureCost;
-    if (agent.energy <= 0) {
-      agent.lastAction = "death";
+
+    if (!this.spendMetabolism(agent)) {
       return null;
     }
 
     const move = this.chooseMove(agent);
-    agent.x = (agent.x + move.dx + this.width) % this.width;
-    agent.y = (agent.y + move.dy + this.height) % this.height;
-    agent.energy -= genome.moveCost * (Math.abs(move.dx) + Math.abs(move.dy));
+    this.moveAgent(agent, move);
 
-    const idx = this.index(agent.x, agent.y);
-    const harvested = Math.min(this.resources[idx], genome.harvestRate);
-    this.resources[idx] -= harvested;
-    agent.energy += harvested;
-    this.traces[idx] = clamp(this.traces[idx] + 0.5 + harvested * 0.09, 0, 12);
+    const harvested = this.harvestAgent(agent);
+    this.leaveTrace(agent, harvested);
     agent.lastAction = harvested > 0.2 ? "harvest" : "search";
 
-    if (agent.energy > genome.reproductionThreshold && this.agents.length < this.config.maxAgents) {
+    return this.tryReproduce(agent);
+  }
+
+  spendMetabolism(agent: Agent): boolean {
+    const here = this.index(agent.x, agent.y);
+    const pressureCost = this.pressure[here] * 0.08;
+
+    agent.energy -= agent.genome.metabolism + pressureCost;
+    if (agent.energy > 0) {
+      return true;
+    }
+
+    agent.lastAction = "death";
+    return false;
+  }
+
+  moveAgent(agent: Agent, move: MoveVector): void {
+    agent.x = (agent.x + move.dx + this.width) % this.width;
+    agent.y = (agent.y + move.dy + this.height) % this.height;
+    agent.energy -= agent.genome.moveCost * (Math.abs(move.dx) + Math.abs(move.dy));
+  }
+
+  harvestAgent(agent: Agent): number {
+    const idx = this.index(agent.x, agent.y);
+    const harvested = Math.min(this.resources[idx], agent.genome.harvestRate);
+    this.resources[idx] -= harvested;
+    agent.energy += harvested;
+    return harvested;
+  }
+
+  leaveTrace(agent: Agent, harvested: number): void {
+    const idx = this.index(agent.x, agent.y);
+    this.traces[idx] = clamp(this.traces[idx] + 0.5 + harvested * 0.09, 0, 12);
+  }
+
+  tryReproduce(agent: Agent): Agent | null {
+    if (agent.energy > agent.genome.reproductionThreshold && this.agents.length < this.config.maxAgents) {
       return this.reproduce(agent);
     }
 
