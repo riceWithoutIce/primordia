@@ -68,9 +68,10 @@ function render(): void {
   const data = image.data;
 
   for (let i = 0; i < sim.size; i += 1) {
-    const r = sim.resources[i] / sim.config.resourceCap;
-    const t = Math.min(sim.traces[i] / 9, 1);
-    const p = Math.min(sim.pressure[i] / 3, 1);
+    const cell = sim.environmentAt(i);
+    const r = cell.resource / sim.config.resourceCap;
+    const t = Math.min(cell.trace / 9, 1);
+    const p = Math.min(cell.pressure / 3, 1);
     const offset = i * 4;
 
     data[offset] = Math.floor(8 + r * 64 + p * 38);

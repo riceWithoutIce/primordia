@@ -1,3 +1,17 @@
+export type RandomSource = () => number;
+
+export type AgentAction = "born" | "death" | "harvest" | "search" | "divide";
+
+export interface GridPoint {
+  x: number;
+  y: number;
+}
+
+export interface MoveVector {
+  dx: number;
+  dy: number;
+}
+
 export interface SimulationConfig {
   width: number;
   height: number;
@@ -13,6 +27,8 @@ export interface SimulationConfig {
   seed: number;
 }
 
+export type SimulationConfigPatch = Partial<SimulationConfig>;
+
 export interface Genome {
   senseRadius: number;
   metabolism: number;
@@ -24,15 +40,19 @@ export interface Genome {
   mutationRate: number;
 }
 
-export interface Agent {
+export interface EnvironmentCell {
+  resource: number;
+  trace: number;
+  pressure: number;
+}
+
+export interface Agent extends GridPoint {
   id: number;
-  x: number;
-  y: number;
   energy: number;
   age: number;
   generation: number;
   genome: Genome;
-  lastAction: "born" | "death" | "harvest" | "search" | "divide";
+  lastAction: AgentAction;
 }
 
 export interface Metrics {
@@ -61,11 +81,19 @@ export const DEFAULTS: SimulationConfig = {
   seed: 1337
 };
 
+const MOVE_CANDIDATES: readonly MoveVector[] = [
+  { dx: 0, dy: 0 },
+  { dx: 1, dy: 0 },
+  { dx: -1, dy: 0 },
+  { dx: 0, dy: 1 },
+  { dx: 0, dy: -1 }
+];
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-export function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): RandomSource {
   let t = seed >>> 0;
   return function random(): number {
     t += 0x6d2b79f5;
@@ -76,11 +104,11 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-function mergeConfig(config?: Partial<SimulationConfig>): SimulationConfig {
+function mergeConfig(config?: SimulationConfigPatch): SimulationConfig {
   return { ...DEFAULTS, ...config };
 }
 
-export function createGenome(random: () => number): Genome {
+export function createGenome(random: RandomSource): Genome {
   return {
     senseRadius: random() < 0.72 ? 1 : 2,
     metabolism: 0.52 + random() * 0.5,
@@ -93,7 +121,7 @@ export function createGenome(random: () => number): Genome {
   };
 }
 
-export function mutateGenome(parent: Genome, random: () => number): Genome {
+export function mutateGenome(parent: Genome, random: RandomSource): Genome {
   const rate = parent.mutationRate;
   const child = { ...parent };
 
@@ -126,7 +154,7 @@ export function mutateGenome(parent: Genome, random: () => number): Genome {
 
 export class Simulation {
   config: SimulationConfig;
-  random: () => number;
+  random: RandomSource;
   width: number;
   height: number;
   size: number;
@@ -139,7 +167,7 @@ export class Simulation {
   pressure: Float32Array;
   agents: Agent[] = [];
 
-  constructor(config?: Partial<SimulationConfig>) {
+  constructor(config?: SimulationConfigPatch) {
     this.config = mergeConfig(config);
     this.random = mulberry32(this.config.seed);
     this.width = this.config.width;
@@ -151,7 +179,7 @@ export class Simulation {
     this.reset();
   }
 
-  reset(nextConfig?: Partial<SimulationConfig>): void {
+  reset(nextConfig?: SimulationConfigPatch): void {
     if (nextConfig) {
       this.config = mergeConfig(nextConfig);
       this.random = mulberry32(this.config.seed);
@@ -190,6 +218,19 @@ export class Simulation {
     const xx = (x + this.width) % this.width;
     const yy = (y + this.height) % this.height;
     return yy * this.width + xx;
+  }
+
+  cellAt(x: number, y: number): EnvironmentCell {
+    return this.environmentAt(this.index(x, y));
+  }
+
+  environmentAt(index: number): EnvironmentCell {
+    const idx = ((index % this.size) + this.size) % this.size;
+    return {
+      resource: this.resources[idx],
+      trace: this.traces[idx],
+      pressure: this.pressure[idx]
+    };
   }
 
   spawnAgent(x: number, y: number, genome: Genome, energy: number, generation = 0): Agent {
@@ -297,18 +338,11 @@ export class Simulation {
     return null;
   }
 
-  chooseMove(agent: Agent): { dx: number; dy: number } {
-    const candidates = [
-      { dx: 0, dy: 0 },
-      { dx: 1, dy: 0 },
-      { dx: -1, dy: 0 },
-      { dx: 0, dy: 1 },
-      { dx: 0, dy: -1 }
-    ];
-    let best = candidates[0];
+  chooseMove(agent: Agent): MoveVector {
+    let best = MOVE_CANDIDATES[0];
     let bestScore = -Infinity;
 
-    for (const move of candidates) {
+    for (const move of MOVE_CANDIDATES) {
       const score = this.scoreArea(agent.x + move.dx, agent.y + move.dy, agent.genome) + this.random() * 0.25;
       if (score > bestScore) {
         bestScore = score;
