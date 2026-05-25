@@ -32,6 +32,7 @@ Phase 1.1：工程迁移已完成，进入用户本地手动验证前。
 - 2026-05-25：用户已完成 Windows 本地浏览器手动验证：agent 移动、tick 变化、暂停/继续/单步/重置、速度滑块均正常。Chrome Issues 面板出现 dev 环境 CSP eval 提醒，但未在 app 源码或生产构建中发现对应问题。
 - Windows 一键启动入口位于 `start-dev.bat`，实际逻辑位于 `scripts/start-dev.ps1`。
 - 2026-05-25：Phase 1.2 typed simulation core 已完成初版：明确 `SimulationConfig`、`Agent`、`Genome`、`EnvironmentCell`、`Metrics` 等 core 类型，新增 typed 环境读取 API，并用 Vitest 覆盖 DOM-free core、配置 patch、环境 cell 快照和 deterministic replay。
+- 2026-05-25：Phase 1.3 environment flux modes 已完成初版：`SimulationConfig.environmentMode` 支持 `closed` 与 `flux`；`closed` 不再生成新 resource，`flux` 保持有限资源通量；Vitest 覆盖 closed 无输入、flux 有界输入与 deterministic 行为。
 
 ## 当前优先级
 

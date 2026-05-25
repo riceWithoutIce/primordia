@@ -2,6 +2,8 @@ export type RandomSource = () => number;
 
 export type AgentAction = "born" | "death" | "harvest" | "search" | "divide";
 
+export type EnvironmentMode = "closed" | "flux";
+
 export interface GridPoint {
   x: number;
   y: number;
@@ -13,6 +15,7 @@ export interface MoveVector {
 }
 
 export interface SimulationConfig {
+  environmentMode: EnvironmentMode;
   width: number;
   height: number;
   initialAgents: number;
@@ -67,6 +70,7 @@ export interface Metrics {
 }
 
 export const DEFAULTS: SimulationConfig = {
+  environmentMode: "flux",
   width: 96,
   height: 64,
   initialAgents: 36,
@@ -295,7 +299,7 @@ export class Simulation {
   updateEnvironment(): void {
     const cap = this.config.resourceCap;
     for (let i = 0; i < this.size; i += 1) {
-      if (this.random() < this.config.resourceGrowth) {
+      if (this.config.environmentMode === "flux" && this.random() < this.config.resourceGrowth) {
         this.resources[i] = clamp(this.resources[i] + this.random() * 0.8, 0, cap);
       }
       this.traces[i] *= this.config.traceDecay;
