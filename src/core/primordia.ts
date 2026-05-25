@@ -53,6 +53,7 @@ export interface EnvironmentCell {
 
 export interface Agent extends GridPoint {
   id: number;
+  lineageId: number;
   energy: number;
   age: number;
   generation: number;
@@ -74,6 +75,7 @@ export interface Metrics {
   deaths: number;
   averageEnergy: number;
   maxGeneration: number;
+  lineageCount: number;
   deathReasons: DeathStats;
   totalResource: number;
   totalTrace: number;
@@ -181,6 +183,7 @@ export class Simulation {
   height: number;
   size: number;
   nextAgentId = 1;
+  nextLineageId = 1;
   tickCount = 0;
   births = 0;
   deaths = 0;
@@ -215,6 +218,7 @@ export class Simulation {
     }
 
     this.nextAgentId = 1;
+    this.nextLineageId = 1;
     this.tickCount = 0;
     this.births = 0;
     this.deaths = 0;
@@ -257,9 +261,13 @@ export class Simulation {
     };
   }
 
-  spawnAgent(x: number, y: number, genome: Genome, energy: number, generation = 0): Agent {
+  spawnAgent(x: number, y: number, genome: Genome, energy: number, generation = 0, lineageId?: number): Agent {
+    const resolvedLineageId = lineageId ?? this.nextLineageId++;
+    this.nextLineageId = Math.max(this.nextLineageId, resolvedLineageId + 1);
+
     const agent: Agent = {
       id: this.nextAgentId,
+      lineageId: resolvedLineageId,
       x: (x + this.width) % this.width,
       y: (y + this.height) % this.height,
       energy,
@@ -462,6 +470,7 @@ export class Simulation {
       id: this.nextAgentId++,
       x: (parent.x + offsetX + this.width) % this.width,
       y: (parent.y + offsetY + this.height) % this.height,
+      lineageId: parent.lineageId,
       energy: childEnergy,
       age: 0,
       generation: parent.generation + 1,
@@ -473,9 +482,11 @@ export class Simulation {
   metrics(): Metrics {
     let totalEnergy = 0;
     let maxGeneration = 0;
+    const lineages = new Set<number>();
     for (const agent of this.agents) {
       totalEnergy += agent.energy;
       maxGeneration = Math.max(maxGeneration, agent.generation);
+      lineages.add(agent.lineageId);
     }
 
     let totalResource = 0;
@@ -492,6 +503,7 @@ export class Simulation {
       deaths: this.deaths,
       averageEnergy: this.agents.length ? totalEnergy / this.agents.length : 0,
       maxGeneration,
+      lineageCount: lineages.size,
       deathReasons: { ...this.deathReasons },
       totalResource,
       totalTrace

@@ -142,6 +142,63 @@ describe("typed simulation core", () => {
     expect(after.totalTrace).toBeGreaterThan(beforeTrace);
   });
 
+  it("assigns independent lineage ids to initial spawned agents", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      seed: 37
+    });
+    const genome = {
+      senseRadius: 1,
+      metabolism: 0.1,
+      moveCost: 0,
+      harvestRate: 0,
+      traceAffinity: 0,
+      resourceAffinity: 0,
+      reproductionThreshold: 999,
+      mutationRate: 0
+    };
+    const first = sim.spawnAgent(0, 0, genome, 10);
+    const second = sim.spawnAgent(1, 0, genome, 10);
+
+    expect(first.lineageId).not.toBe(second.lineageId);
+    expect(sim.metrics().lineageCount).toBe(2);
+    expect(sim.metrics().maxGeneration).toBe(0);
+  });
+
+  it("preserves parent lineage through reproduction while increasing generation", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      reproductionShare: 0.5,
+      seed: 39
+    });
+    const genome = {
+      senseRadius: 1,
+      metabolism: 0.1,
+      moveCost: 0,
+      harvestRate: 0,
+      traceAffinity: 0,
+      resourceAffinity: 0,
+      reproductionThreshold: 20,
+      mutationRate: 0
+    };
+    const parent = sim.spawnAgent(1, 1, genome, 60);
+
+    sim.tick();
+    const child = sim.agents.find((agent) => agent.id !== parent.id);
+
+    expect(child).toBeDefined();
+    expect(child?.lineageId).toBe(parent.lineageId);
+    expect(child?.generation).toBe(parent.generation + 1);
+    expect(sim.metrics().lineageCount).toBe(1);
+    expect(sim.metrics().maxGeneration).toBe(1);
+  });
+
   it("records starvation deaths and returns residue to the environment", () => {
     const sim = new Simulation({
       environmentMode: "closed",

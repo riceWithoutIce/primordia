@@ -14,6 +14,7 @@ const reset = getElement<HTMLButtonElement>("reset");
 const metrics = {
   tick: getElement<HTMLElement>("m-tick"),
   agents: getElement<HTMLElement>("m-agents"),
+  lineages: getElement<HTMLElement>("m-lineages"),
   energy: getElement<HTMLElement>("m-energy"),
   generation: getElement<HTMLElement>("m-generation"),
   births: getElement<HTMLElement>("m-births"),
@@ -127,6 +128,7 @@ function updateMetrics(): void {
   const m = sim.metrics();
   metrics.tick.textContent = String(m.tick);
   metrics.agents.textContent = String(m.agents);
+  metrics.lineages.textContent = String(m.lineageCount);
   metrics.energy.textContent = m.averageEnergy.toFixed(1);
   metrics.generation.textContent = String(m.maxGeneration);
   metrics.births.textContent = String(m.births);

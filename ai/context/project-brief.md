@@ -36,6 +36,7 @@ Phase 1.1：工程迁移已完成，进入用户本地手动验证前。
 - 2026-05-25：Phase 1.4 agent survival loop 已完成初版：tick 内部明确为代谢、移动、采集、留痕、尝试繁殖、死亡移除；Vitest 覆盖 closed 无资源自然灭绝，以及存活行动会改变 energy 或 environment。
 - 2026-05-25：Phase 1.5 death reasons and residue recovery 已完成初版：记录 `starvation`、`pressure`、`overflow` 死亡原因，死亡残余回收到 resource/trace/pressure，UI 显示死亡原因计数；Vitest 覆盖三类死亡原因与残余回收。
 - 2026-05-25：Phase 1.5 浏览器人工验证通过：agent 移动、tick 变化、按钮与速度滑块可用；当前生命运动轨迹仍显得随机、生命感较初级，后续应通过资源梯度、痕迹偏好、谱系差异和生态压力继续强化可感知的方向性。
+- 2026-05-25：Phase 1.6 lineage tracking 已完成初版：初代 agent 获得独立 `lineageId`，后代继承父代谱系，metrics 与 UI 显示当前存活谱系数量；Vitest 覆盖初代谱系独立性、繁殖谱系继承和最高世代。
 
 ## 当前优先级
 
