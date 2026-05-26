@@ -21,7 +21,7 @@
 
 ## 当前阶段
 
-Phase 1：最小生命闭环已完成到最终验收前。
+Phase 2：生态与谱系已完成验收，下一步进入 Phase 3 前置讨论。
 
 - 项目起源已经沉积到 `docs/origin.md`。
 - 基础文档结构已经建立。
@@ -42,6 +42,13 @@ Phase 1：最小生命闭环已完成到最终验收前。
 - 2026-05-26：Phase 1.8 observability metrics 已完成：core metrics 和 UI 展示当前 seed、生命数量、谱系数量、总资源、总痕迹、总压力、平均能量、最高世代、出生与饥饿/压力/溢出死亡原因统计；指标随 step/reset 更新，不引入外部数据源。
 - 2026-05-26：Phase 1.9 deterministic test suite 已完成：`npm run test` 可运行 DOM-free Vitest；覆盖完整快照 replay、closed 自然灭绝、flux 有界生命周期、death recovery、genome bounds、population cap 和 UI 指标绑定；`npm run check` 覆盖 typecheck 与 tests。
 - 2026-05-26：Phase 1.10 GitHub Pages 已完成：生产构建发布到 `gh-pages` 分支，Pages source 为 `gh-pages /`，公开 URL 为 <https://ricewithoutice.github.io/primordia/>；已验证 HTML/JS/CSS 返回 HTTP 200。仍建议用户用浏览器人工确认 Canvas 非空和按钮交互。
+- 2026-05-26：Phase 1.12 验收已完成，Phase 1 父 issue 已关闭；之后进入 Phase 2 生态与谱系任务。
+- 2026-05-26：Phase 2.1 到 Phase 2.3 已完成：资源初始化改为确定性地形，资源恢复由肥力驱动，并加入局部枯竭与压力敏感恢复；用户已观察到噪声区域和资源/恢复差异。
+- 2026-05-26：Phase 2.4 到 Phase 2.5 已完成：agent 按谱系着色，并在 metrics/UI 中追踪总谱系、活跃谱系、灭绝谱系、优势谱系与优势占比；用户已确认能看到不同谱系。
+- 2026-05-26：Phase 2.6 到 Phase 2.7 已完成：压力扩散、移动成本地形和硬屏障已实现；用户确认压力不再是单点，并反馈 agent 容易卡在边缘，已在 #26 备注为后续可调优点。
+- 2026-05-26：Phase 2.8 已完成：确定性 bloom/pressure 环境事件按 seed 和 tick 触发，不消耗普通仿真随机序列；页面显示事件数量、最近事件和短暂事件脉冲。
+- 2026-05-26：Phase 2.9 已完成：`Simulation.snapshot()` 输出可复现实验快照，页面可记录、复制和下载 JSON；用户已人工验证记录导出正确。
+- 2026-05-26：Phase 2.10 验收已完成：详见 `docs/05-phase-two-acceptance.md`。Phase 2 当前任务定义下通过，暂不追加环境事件细化等临时任务。
 
 ## 当前优先级
 
@@ -49,7 +56,7 @@ Phase 1：最小生命闭环已完成到最终验收前。
 2. 让培养皿稳定、可观察、可暂停、可重置。
 3. 让生命感先于智能感出现。
 4. 记录实验参数和观察结果。
-5. 完成 Phase 1.12 验收评审后再进入 Phase 2。
+5. 进入 Phase 3 前，先讨论行为器官和工具边界的安全设计。
 
 ## 未来研究线
 

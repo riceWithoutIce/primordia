@@ -37,9 +37,8 @@
 
 当前状态：
 
-- Phase 1.1 到 Phase 1.10 已完成：TypeScript/Vite 迁移、typed core、closed/flux 环境、agent 生存循环、死亡原因与残余回收、谱系追踪、genome 边界与生态代价、观察指标、确定性测试和 GitHub Pages 静态部署。
+- Phase 1 已完成并验收：TypeScript/Vite 迁移、typed core、closed/flux 环境、agent 生存循环、死亡原因与残余回收、谱系追踪、genome 边界与生态代价、观察指标、确定性测试、文档收尾和 GitHub Pages 静态部署。
 - 公开页面：<https://ricewithoutice.github.io/primordia/>
-- 下一步是 Phase 1.11 文档收尾和 Phase 1.12 验收评审；通过后再进入 Phase 2。
 
 ## Phase 2：生态与谱系
 
@@ -56,6 +55,12 @@
 - 不同谱系在不同环境里出现不同命运。
 - 局部竞争、迁移、繁荣、崩溃和恢复能被观察。
 - 实验记录可以保存、回放和比较。
+
+当前状态：
+
+- Phase 2 已完成并验收：资源地形、肥力通量、局部枯竭/恢复、谱系颜色、谱系命运指标、压力扩散、屏障与移动成本、确定性环境事件、实验快照导出和 Phase 2 验收记录均已完成。
+- 验收记录见 [Phase 2 Acceptance Review](05-phase-two-acceptance.md)。
+- 下一步是 Phase 3：行为器官与工具边界。进入实施前需要重新确认工具仍只作用于培养皿内部，不能访问真实网络、文件系统、shell、凭证或外部权限。
 
 ## Phase 3：行为器官与工具边界
 

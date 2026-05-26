@@ -4,7 +4,7 @@
 
 未形是一个本地安全沙盒中的数字生命培养皿。它探索的不是高智能 agent，也不是无约束扩张，而是在边界内持续存在的低等数字生命：它来自环境，存在于环境，改变环境，并最终成为环境的一部分。
 
-第一阶段目标是在二维信息环境中模拟一群简单 agent。它们消耗 token 能量，感知局部资源，移动、采集、留下痕迹、繁殖、变异，并在环境压力下自然选择。
+当前培养皿在二维信息环境中模拟一群简单 agent。它们消耗 token 能量，感知局部资源，移动、采集、留下痕迹、繁殖、变异，并在环境压力、地形、屏障、环境事件和谱系竞争中自然选择。
 
 ## 安全原则
 
@@ -19,12 +19,13 @@
 
 ## 当前状态
 
-Phase 1 最小生命闭环已经完成到公开部署前的验收阶段：
+Phase 2 生态与谱系已经完成验收：
 
 - TypeScript core 支持 `closed` / `flux` 环境、有限资源通量、代谢、移动、采集、留痕、繁殖、变异、死亡原因和死亡残余回收。
 - genome 变异被固定边界收束，高感知、高采集、低繁殖阈值等优势带有生态代价。
-- UI 展示 tick、seed、生命数量、谱系数量、总资源、总痕迹、总压力、平均能量、最高世代、出生与死亡原因统计。
-- `npm run test` 覆盖 DOM-free core、deterministic replay、closed 灭绝、flux 有界输入、death recovery、genome bounds、population cap 和 UI 指标绑定。
+- Phase 2 增加确定性资源地形、肥力驱动通量、局部枯竭与恢复、压力扩散、屏障、移动成本、谱系颜色、谱系命运指标、确定性环境事件和实验快照导出。
+- UI 展示 tick、seed、生命数量、谱系数量、总资源、总痕迹、总压力、环境事件、平均能量、最高世代、出生与死亡原因统计，并支持记录/复制/下载实验快照 JSON。
+- `npm run test` 覆盖 DOM-free core、deterministic replay、closed 灭绝、flux 有界输入、death recovery、genome bounds、population cap、Phase 2 ecology mechanics、experiment snapshots 和 UI 绑定。
 - 公开静态页面：<https://ricewithoutice.github.io/primordia/>
 
 ## 当前骨架
@@ -93,7 +94,7 @@ const sim = new Simulation({ seed: 20260523 });
 sim.step(120);
 ```
 
-当前第一阶段不包含真实 LLM API、真实互联网输入、外部工具生命、shell 行为器官或 agent 侧文件/凭证访问。GitHub Pages 只发布静态 `dist/` 页面。
+当前阶段不包含真实 LLM API、真实互联网输入、外部工具生命、shell 行为器官或 agent 侧文件/凭证访问。GitHub Pages 只发布静态 `dist/` 页面。实验快照是用户主动生成的浏览器 JSON，不写入后端或外部存储。
 
 ## 文档入口
 
@@ -103,5 +104,6 @@ sim.step(120);
 - [生命映射](docs/02-life-mapping.md)
 - [第一阶段规格](docs/03-phase-one-spec.md)
 - [路线图](docs/04-roadmap.md)
+- [第二阶段验收](docs/05-phase-two-acceptance.md)
 - [LLM 语义器官研究线](docs/future/llm-semantic-organ.md)
 - [AI 工作区](ai/README.md)
