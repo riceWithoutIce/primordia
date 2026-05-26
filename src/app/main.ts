@@ -1,13 +1,13 @@
 import {
   Simulation,
   type Agent,
-  type EnvironmentCell,
   type EnvironmentEventRecord,
   type EnvironmentProcessRecord,
-  type ExperimentSnapshot,
-  type TerrainType
+  type ExperimentSnapshot
 } from "../core/primordia";
 import { lineageFillStyle } from "./lineageColor";
+import { isViewMode, type ViewMode } from "./render/mapViewTypes";
+import { paintMapCell } from "./render/mapViews";
 import "./styles.css";
 
 const { canvas, ctx } = getCanvasContext();
@@ -21,8 +21,6 @@ let lastSnapshotJson = "";
 let viewMode: ViewMode = "resource";
 let renderBuffer: HTMLCanvasElement | null = null;
 let renderBufferCtx: CanvasRenderingContext2D | null = null;
-
-type ViewMode = "resource" | "terrain" | "biome" | "pressure" | "lineage";
 
 const speed = getElement<HTMLInputElement>("speed");
 const speedLabel = getElement<HTMLOutputElement>("speed-label");
@@ -146,7 +144,7 @@ function render(): void {
   for (let i = 0; i < sim.size; i += 1) {
     const cell = sim.environmentAt(i);
     const offset = i * 4;
-    paintCell(data, offset, cell);
+    paintMapCell(data, offset, cell, viewMode, sim.config.resourceCap);
   }
 
   const { buffer, bufferCtx } = getRenderBuffer(sim.width, sim.height);
@@ -183,63 +181,6 @@ function getRenderBuffer(width: number, height: number): { buffer: HTMLCanvasEle
   }
 
   return { buffer: renderBuffer, bufferCtx: renderBufferCtx };
-}
-
-function paintCell(data: Uint8ClampedArray, offset: number, cell: EnvironmentCell): void {
-  if (viewMode === "terrain") {
-    const elevation = cell.elevation;
-    const moisture = Math.min(1, cell.moistureBase + cell.moistureDelta * 0.22);
-    data[offset] = Math.floor(18 + elevation * 126 + moisture * 20);
-    data[offset + 1] = Math.floor(26 + elevation * 88 + moisture * 92);
-    data[offset + 2] = Math.floor(32 + elevation * 64 + moisture * 88);
-    data[offset + 3] = 255;
-    return;
-  }
-
-  if (viewMode === "biome") {
-    const color = biomeColor(cell.terrainType);
-    data[offset] = color[0];
-    data[offset + 1] = color[1];
-    data[offset + 2] = color[2];
-    data[offset + 3] = 255;
-    return;
-  }
-
-  if (viewMode === "pressure") {
-    const p = Math.min(cell.pressure / 4, 1);
-    const t = Math.min(cell.trace / 10, 1);
-    const moisture = Math.min(cell.moistureDelta / 2, 1);
-    data[offset] = Math.floor(18 + p * 188 + t * 28);
-    data[offset + 1] = Math.floor(18 + moisture * 92);
-    data[offset + 2] = Math.floor(24 + t * 104 + moisture * 80);
-    data[offset + 3] = 255;
-    return;
-  }
-
-  if (viewMode === "lineage") {
-    const fertility = Math.min(cell.fertility, 1);
-    data[offset] = Math.floor(12 + fertility * 34);
-    data[offset + 1] = Math.floor(16 + fertility * 48);
-    data[offset + 2] = Math.floor(18 + fertility * 38);
-    data[offset + 3] = 255;
-    return;
-  }
-
-  const r = cell.resource / sim.config.resourceCap;
-  const t = Math.min(cell.trace / 9, 1);
-  const p = Math.min(cell.pressure / 3, 1);
-  const m = Math.min(Math.max(cell.movementCost - 1, 0), 1);
-
-  data[offset] = Math.floor(8 + r * 64 + p * 38 - m * 16);
-  data[offset + 1] = Math.floor(12 + r * 154 + t * 58 - m * 12);
-  data[offset + 2] = Math.floor(13 + t * 156 + p * 36 + m * 40);
-  data[offset + 3] = 255;
-
-  if (cell.barrier) {
-    data[offset] = 5;
-    data[offset + 1] = 7;
-    data[offset + 2] = 8;
-  }
 }
 
 function drawAgent(agent: Agent, cellW: number, cellH: number): void {
@@ -350,29 +291,6 @@ function formatProcess(process: EnvironmentProcessRecord | null): string {
   }
 
   return `${process.kind} ${process.x},${process.y}`;
-}
-
-function biomeColor(type: TerrainType): [number, number, number] {
-  switch (type) {
-    case "ocean":
-      return [19, 58, 82];
-    case "coast":
-      return [62, 114, 113];
-    case "plain":
-      return [73, 137, 82];
-    case "hill":
-      return [105, 122, 75];
-    case "mountain":
-      return [147, 150, 142];
-    case "wetland":
-      return [45, 119, 104];
-    case "desert":
-      return [171, 143, 78];
-  }
-}
-
-function isViewMode(value: string | undefined): value is ViewMode {
-  return value === "resource" || value === "terrain" || value === "biome" || value === "pressure" || value === "lineage";
 }
 
 function tickRate(): number {

@@ -211,5 +211,9 @@ function processTerrainBoost(type: TerrainType): number {
       return 0.55;
     case "desert":
       return 0.68;
+    case "tundra":
+      return 0.64;
+    case "snow":
+      return 0.46;
   }
 }

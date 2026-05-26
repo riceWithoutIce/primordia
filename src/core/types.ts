@@ -8,7 +8,16 @@ export type EnvironmentMode = "closed" | "flux";
 
 export type EnvironmentEventKind = "bloom" | "pressure";
 
-export type TerrainType = "ocean" | "coast" | "plain" | "hill" | "mountain" | "wetland" | "desert";
+export type TerrainType =
+  | "ocean"
+  | "coast"
+  | "plain"
+  | "hill"
+  | "mountain"
+  | "wetland"
+  | "desert"
+  | "tundra"
+  | "snow";
 
 export type EnvironmentProcessKind = "moisture-front";
 

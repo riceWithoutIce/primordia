@@ -52,5 +52,9 @@ function biomeBucketFor(biome: TerrainType): number {
       return 5;
     case "desert":
       return 6;
+    case "tundra":
+      return 7;
+    case "snow":
+      return 8;
   }
 }

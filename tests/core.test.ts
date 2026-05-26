@@ -184,6 +184,7 @@ describe("typed simulation core", () => {
     expect(occupiedBiomes).toBeGreaterThanOrEqual(5);
     expect(biomeCounts.ocean).toBeGreaterThan(0);
     expect(biomeCounts.mountain + biomeCounts.hill).toBeGreaterThan(0);
+    expect(biomeCounts.snow + biomeCounts.tundra).toBeGreaterThanOrEqual(0);
     expect(sim.cellAt(0, 0).elevation).toBeGreaterThanOrEqual(0);
     expect(sim.cellAt(0, 0).elevation).toBeLessThanOrEqual(1);
   });

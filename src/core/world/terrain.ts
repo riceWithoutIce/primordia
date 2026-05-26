@@ -3,7 +3,17 @@ import { fbmNoise2d, valueNoise2d } from "../random/noise";
 import { clamp } from "../random/rng";
 import type { SimulationConfig, StaticTerrain, TerrainCell, TerrainType } from "../types";
 
-const TERRAIN_TYPES: readonly TerrainType[] = ["ocean", "coast", "plain", "hill", "mountain", "wetland", "desert"];
+const TERRAIN_TYPES: readonly TerrainType[] = [
+  "ocean",
+  "coast",
+  "plain",
+  "hill",
+  "mountain",
+  "wetland",
+  "desert",
+  "tundra",
+  "snow"
+];
 
 export function terrainTypes(): readonly TerrainType[] {
   return TERRAIN_TYPES;
@@ -113,8 +123,14 @@ export function classifyTerrain(elevation: number, moisture: number, temperature
   if (elevation < 0.34) {
     return "coast";
   }
+  if (elevation > 0.8 && temperature < 0.48) {
+    return "snow";
+  }
   if (elevation > 0.78) {
     return "mountain";
+  }
+  if (temperature < 0.28 && elevation > 0.45) {
+    return moisture > 0.38 ? "tundra" : "snow";
   }
   if (moisture > 0.72 && elevation < 0.5) {
     return "wetland";
@@ -146,6 +162,10 @@ export function fertilityFor(type: TerrainType, elevation: number, moisture: num
       return clamp(0.55 + temperature * 0.28, 0.45, 0.92);
     case "desert":
       return clamp(0.06 + moisture * 0.2, 0.04, 0.28);
+    case "tundra":
+      return clamp(0.12 + moisture * 0.22, 0.08, 0.38);
+    case "snow":
+      return clamp(0.03 + moisture * 0.08, 0.02, 0.16);
   }
 }
 
@@ -187,7 +207,9 @@ export function emptyBiomeCounts(): Record<TerrainType, number> {
     hill: 0,
     mountain: 0,
     wetland: 0,
-    desert: 0
+    desert: 0,
+    tundra: 0,
+    snow: 0
   };
 }
 
@@ -225,5 +247,6 @@ function legacyMovementTerrainAtRaw(elevation: number, moisture: number, type: T
   const oceanDrag = type === "ocean" ? 1 : 0;
   const mountainDrag = type === "mountain" ? 0.8 : type === "hill" ? 0.42 : 0;
   const desertDrag = type === "desert" ? 0.22 : 0;
-  return clamp(slopeLike * 0.42 + moisture * 0.08 + wetDrag + oceanDrag + mountainDrag + desertDrag, 0, 1);
+  const coldDrag = type === "snow" ? 0.72 : type === "tundra" ? 0.3 : 0;
+  return clamp(slopeLike * 0.42 + moisture * 0.08 + wetDrag + oceanDrag + mountainDrag + desertDrag + coldDrag, 0, 1);
 }

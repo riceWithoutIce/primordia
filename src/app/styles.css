@@ -105,9 +105,10 @@ h1 {
 }
 
 .view-modes {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
 }
 
 button {
@@ -130,10 +131,15 @@ button:disabled {
 }
 
 .view-mode {
+  flex: 1 1 78px;
+  min-width: 0;
   min-height: 34px;
-  padding: 0 6px;
-  font-size: 12px;
-  text-transform: uppercase;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .view-mode.active {

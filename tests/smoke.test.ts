@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { lineageColorFor, lineageHue } from "../src/app/lineageColor";
+import { BIOME_PALETTE } from "../src/app/render/palettes";
+import { TERRAIN_RENDER_CONFIG, terrainColor } from "../src/app/render/mapViews";
 import { Simulation } from "../src/core/primordia";
 
 describe("primordia simulation smoke", () => {
@@ -78,6 +80,26 @@ describe("primordia simulation smoke", () => {
 
     for (const id of viewIds) {
       expect(html).toContain(`id="${id}"`);
+    }
+  });
+
+  it("keeps terrain visualization configurable and covers cold biomes", () => {
+    expect(TERRAIN_RENDER_CONFIG.contourInterval).toBeGreaterThan(0);
+    expect(BIOME_PALETTE.snow).toBeDefined();
+    expect(BIOME_PALETTE.tundra).toBeDefined();
+
+    const sim = new Simulation({
+      width: 32,
+      height: 20,
+      initialAgents: 0,
+      seed: 20260605
+    });
+    const color = terrainColor(sim.cellAt(8, 8));
+
+    expect(color).toHaveLength(3);
+    for (const channel of color) {
+      expect(channel).toBeGreaterThanOrEqual(0);
+      expect(channel).toBeLessThanOrEqual(255);
     }
   });
 
