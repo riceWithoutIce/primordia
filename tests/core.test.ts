@@ -5,6 +5,7 @@ import {
   Simulation,
   constrainGenome,
   mutateGenome,
+  resourceTerrainAt,
   type EnvironmentCell,
   type EnvironmentMode,
   type Genome,
@@ -122,6 +123,73 @@ describe("typed simulation core", () => {
     expect(flux.metrics().totalResource).toBeGreaterThan(fluxBefore);
     expect(flux.metrics().totalResource).toBeLessThanOrEqual(flux.size * flux.config.resourceCap);
     expect(closed.metrics().totalResource).toBe(closedBefore);
+  });
+
+  it("initializes resources from deterministic terrain instead of independent snow", () => {
+    const config: SimulationConfigPatch = {
+      width: 32,
+      height: 24,
+      initialAgents: 0,
+      resourceCap: 9,
+      seed: 20260529
+    };
+    const first = new Simulation(config);
+    const replay = new Simulation(config);
+    const other = new Simulation({ ...config, seed: 20260530 });
+
+    expect(Array.from(replay.resources)).toEqual(Array.from(first.resources));
+    expect(Array.from(other.resources)).not.toEqual(Array.from(first.resources));
+
+    const maxResource = Math.max(...Array.from(first.resources));
+    const minResource = Math.min(...Array.from(first.resources));
+    expect(maxResource).toBeGreaterThan(minResource + first.config.resourceCap * 0.25);
+    expect(first.cellAt(5, 7).resource).toBeCloseTo(resourceTerrainAt(5, 7, first.config));
+  });
+
+  it("makes neighboring terrain cells more similar than distant cells", () => {
+    const sim = new Simulation({
+      width: 48,
+      height: 32,
+      initialAgents: 0,
+      seed: 20260530
+    });
+    let neighborDelta = 0;
+    let farDelta = 0;
+    let samples = 0;
+
+    for (let y = 0; y < sim.height; y += 4) {
+      for (let x = 0; x < sim.width; x += 4) {
+        neighborDelta += Math.abs(sim.cellAt(x, y).resource - sim.cellAt(x + 1, y).resource);
+        farDelta += Math.abs(sim.cellAt(x, y).resource - sim.cellAt(x + 13, y + 9).resource);
+        samples += 1;
+      }
+    }
+
+    expect(neighborDelta / samples).toBeLessThan(farDelta / samples);
+  });
+
+  it("draws agents toward richer terrain over time", () => {
+    const sim = new Simulation({
+      width: 48,
+      height: 32,
+      initialAgents: 24,
+      maxAgents: 80,
+      seed: 20260531
+    });
+    let terrainTotal = 0;
+    for (let y = 0; y < sim.height; y += 1) {
+      for (let x = 0; x < sim.width; x += 1) {
+        terrainTotal += resourceTerrainAt(x, y, sim.config);
+      }
+    }
+    const averageTerrain = terrainTotal / sim.size;
+
+    sim.step(80);
+    const agentTerrain =
+      sim.agents.reduce((total, agent) => total + resourceTerrainAt(agent.x, agent.y, sim.config), 0) / sim.agents.length;
+
+    expect(sim.agents.length).toBeGreaterThan(0);
+    expect(agentTerrain).toBeGreaterThan(averageTerrain);
   });
 
   it("keeps full simulation snapshots deterministic for identical seeds and ticks", () => {

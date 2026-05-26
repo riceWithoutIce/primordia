@@ -150,6 +150,49 @@ function createDeathStats(): DeathStats {
   };
 }
 
+function hash2d(x: number, y: number, seed: number): number {
+  let h = Math.imul(x ^ Math.imul(y, 0x27d4eb2d) ^ seed, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967295;
+}
+
+function smoothstep(value: number): number {
+  return value * value * (3 - 2 * value);
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+function valueNoise2d(x: number, y: number, seed: number, scale: number): number {
+  const nx = x / scale;
+  const ny = y / scale;
+  const x0 = Math.floor(nx);
+  const y0 = Math.floor(ny);
+  const tx = smoothstep(nx - x0);
+  const ty = smoothstep(ny - y0);
+
+  const a = hash2d(x0, y0, seed);
+  const b = hash2d(x0 + 1, y0, seed);
+  const c = hash2d(x0, y0 + 1, seed);
+  const d = hash2d(x0 + 1, y0 + 1, seed);
+  return lerp(lerp(a, b, tx), lerp(c, d, tx), ty);
+}
+
+export function resourceTerrainAt(x: number, y: number, config: SimulationConfig): number {
+  const broadScale = Math.max(8, Math.min(config.width, config.height) * 0.38);
+  const midScale = Math.max(5, Math.min(config.width, config.height) * 0.16);
+  const fineScale = Math.max(3, Math.min(config.width, config.height) * 0.07);
+  const broad = valueNoise2d(x, y, config.seed ^ 0x9e3779b9, broadScale);
+  const mid = valueNoise2d(x, y, config.seed ^ 0x7f4a7c15, midScale);
+  const fine = valueNoise2d(x, y, config.seed ^ 0x94d049bb, fineScale);
+  const shaped = Math.pow(broad * 0.6 + mid * 0.3 + fine * 0.1, 1.35);
+
+  return clamp(shaped * config.resourceCap * 0.9, 0, config.resourceCap);
+}
+
 export function createGenome(random: RandomSource): Genome {
   return constrainGenome({
     senseRadius: random() < 0.72 ? 1 : 2,
@@ -294,7 +337,9 @@ export class Simulation {
     this.agents = [];
 
     for (let i = 0; i < this.size; i += 1) {
-      this.resources[i] = this.random() * this.config.resourceCap * 0.65;
+      const x = i % this.width;
+      const y = Math.floor(i / this.width);
+      this.resources[i] = resourceTerrainAt(x, y, this.config);
       this.traces[i] = 0;
       this.pressure[i] = this.random() * 0.35;
     }
