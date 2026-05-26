@@ -52,6 +52,7 @@ export interface GenomeRange {
 
 export interface EnvironmentCell {
   resource: number;
+  fertility: number;
   trace: number;
   pressure: number;
 }
@@ -191,6 +192,14 @@ export function resourceTerrainAt(x: number, y: number, config: SimulationConfig
   const shaped = Math.pow(broad * 0.6 + mid * 0.3 + fine * 0.1, 1.35);
 
   return clamp(shaped * config.resourceCap * 0.9, 0, config.resourceCap);
+}
+
+export function resourceFertilityAt(x: number, y: number, config: SimulationConfig): number {
+  if (config.resourceCap <= 0) {
+    return 0;
+  }
+
+  return clamp(resourceTerrainAt(x, y, config) / (config.resourceCap * 0.9), 0, 1);
 }
 
 export function createGenome(random: RandomSource): Genome {
@@ -369,6 +378,7 @@ export class Simulation {
     const idx = ((index % this.size) + this.size) % this.size;
     return {
       resource: this.resources[idx],
+      fertility: resourceFertilityAt(idx % this.width, Math.floor(idx / this.width), this.config),
       trace: this.traces[idx],
       pressure: this.pressure[idx]
     };
@@ -443,8 +453,15 @@ export class Simulation {
   updateEnvironment(): void {
     const cap = this.config.resourceCap;
     for (let i = 0; i < this.size; i += 1) {
-      if (this.config.environmentMode === "flux" && this.random() < this.config.resourceGrowth) {
-        this.resources[i] = clamp(this.resources[i] + this.random() * 0.8, 0, cap);
+      if (this.config.environmentMode === "flux") {
+        const x = i % this.width;
+        const y = Math.floor(i / this.width);
+        const fertility = resourceFertilityAt(x, y, this.config);
+        const growthChance = this.config.resourceGrowth * (0.25 + fertility * 1.15);
+        if (this.random() < growthChance) {
+          const growthAmount = (0.15 + fertility * 0.85) * this.random() * 0.8;
+          this.resources[i] = clamp(this.resources[i] + growthAmount, 0, cap);
+        }
       }
       this.traces[i] *= this.config.traceDecay;
       this.pressure[i] = clamp(

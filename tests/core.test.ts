@@ -5,6 +5,7 @@ import {
   Simulation,
   constrainGenome,
   mutateGenome,
+  resourceFertilityAt,
   resourceTerrainAt,
   type EnvironmentCell,
   type EnvironmentMode,
@@ -80,7 +81,9 @@ describe("typed simulation core", () => {
     expect(wrapped).toEqual(origin);
 
     origin.resource = 999;
+    origin.fertility = 999;
     expect(sim.cellAt(0, 0).resource).not.toBe(999);
+    expect(sim.cellAt(0, 0).fertility).not.toBe(999);
     expect(sim.environmentAt(sim.size).resource).toBe(sim.cellAt(0, 0).resource);
   });
 
@@ -144,6 +147,48 @@ describe("typed simulation core", () => {
     const minResource = Math.min(...Array.from(first.resources));
     expect(maxResource).toBeGreaterThan(minResource + first.config.resourceCap * 0.25);
     expect(first.cellAt(5, 7).resource).toBeCloseTo(resourceTerrainAt(5, 7, first.config));
+  });
+
+  it("exposes deterministic fertility derived from resource terrain", () => {
+    const sim = new Simulation({
+      width: 32,
+      height: 24,
+      initialAgents: 0,
+      resourceCap: 9,
+      seed: 20260529
+    });
+    const fertile = sim.cellAt(5, 7).fertility;
+
+    expect(fertile).toBeCloseTo(resourceFertilityAt(5, 7, sim.config));
+    expect(fertile).toBeGreaterThanOrEqual(0);
+    expect(fertile).toBeLessThanOrEqual(1);
+  });
+
+  it("uses fertility to bias flux resource growth toward richer terrain", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 40,
+      height: 28,
+      initialAgents: 0,
+      resourceGrowth: 0.5,
+      resourceCap: 9,
+      seed: 20260532
+    });
+    const cells = Array.from({ length: sim.size }, (_, index) => {
+      const x = index % sim.width;
+      const y = Math.floor(index / sim.width);
+      return { index, fertility: resourceFertilityAt(x, y, sim.config) };
+    }).sort((a, b) => a.fertility - b.fertility);
+    const low = cells.slice(0, 120);
+    const high = cells.slice(-120);
+
+    sim.resources.fill(0);
+    sim.step(24);
+
+    const lowAverage = low.reduce((total, cell) => total + sim.resources[cell.index], 0) / low.length;
+    const highAverage = high.reduce((total, cell) => total + sim.resources[cell.index], 0) / high.length;
+
+    expect(highAverage).toBeGreaterThan(lowAverage * 1.5);
   });
 
   it("makes neighboring terrain cells more similar than distant cells", () => {
