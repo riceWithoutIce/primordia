@@ -25,6 +25,26 @@ function testGenome(overrides: Partial<Genome> = {}): Genome {
   };
 }
 
+function simulationSnapshot(sim: Simulation): {
+  metrics: ReturnType<Simulation["metrics"]>;
+  cells: EnvironmentCell[];
+  agents: Array<Pick<ReturnType<Simulation["spawnAgent"]>, "x" | "y" | "energy" | "generation" | "lineageId" | "lastAction">>;
+} {
+  const sampleIndexes = [0, Math.floor(sim.size / 3), Math.floor(sim.size / 2), sim.size - 1];
+  return {
+    metrics: sim.metrics(),
+    cells: sampleIndexes.map((index) => sim.environmentAt(index)),
+    agents: sim.agents.map((agent) => ({
+      x: agent.x,
+      y: agent.y,
+      energy: Number(agent.energy.toFixed(6)),
+      generation: agent.generation,
+      lineageId: agent.lineageId,
+      lastAction: agent.lastAction
+    }))
+  };
+}
+
 describe("typed simulation core", () => {
   it("constructs from a typed config patch without browser globals", () => {
     expect(globalThis.document).toBeUndefined();
@@ -102,6 +122,48 @@ describe("typed simulation core", () => {
     expect(flux.metrics().totalResource).toBeGreaterThan(fluxBefore);
     expect(flux.metrics().totalResource).toBeLessThanOrEqual(flux.size * flux.config.resourceCap);
     expect(closed.metrics().totalResource).toBe(closedBefore);
+  });
+
+  it("keeps full simulation snapshots deterministic for identical seeds and ticks", () => {
+    const config: SimulationConfigPatch = {
+      environmentMode: "flux",
+      width: 16,
+      height: 12,
+      initialAgents: 8,
+      maxAgents: 40,
+      seed: 20260527
+    };
+    const first = new Simulation(config);
+    const replay = new Simulation(config);
+
+    first.step(96);
+    replay.step(96);
+
+    expect(simulationSnapshot(replay)).toEqual(simulationSnapshot(first));
+  });
+
+  it("lets finite flux runs stay bounded while producing lifecycle events", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 18,
+      height: 12,
+      initialAgents: 10,
+      maxAgents: 36,
+      initialEnergy: 28,
+      resourceGrowth: 0.045,
+      seed: 20260528
+    });
+
+    sim.step(220);
+    const metrics = sim.metrics();
+
+    expect(metrics.tick).toBe(220);
+    expect(metrics.agents).toBeGreaterThanOrEqual(0);
+    expect(metrics.agents).toBeLessThanOrEqual(sim.config.maxAgents);
+    expect(metrics.births).toBeGreaterThanOrEqual(sim.config.initialAgents);
+    expect(metrics.deaths).toBeGreaterThan(0);
+    expect(metrics.totalResource).toBeGreaterThanOrEqual(0);
+    expect(metrics.totalResource).toBeLessThanOrEqual(sim.size * sim.config.resourceCap);
   });
 
   it("lets agents naturally disappear in a closed environment without resources", () => {
