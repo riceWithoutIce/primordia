@@ -110,9 +110,11 @@
 
 当前状态：
 
-- Phase 3 已进入安全设计与任务拆分阶段。
+- Phase 3 已完成并验收。
 - 行为器官边界规格见 [Phase 3 Behavior Organ Boundaries](07-phase-three-organ-boundaries.md)。
+- 验收记录见 [Phase 3 Acceptance Review](08-phase-three-acceptance.md)。
 - Phase 3 的“工具”只允许是培养皿内部的模拟器官动作，不允许真实网络、文件系统、shell、凭证、token、外部 API 或浏览器权限。
+- 已实现 typed organ actions、预算/拒绝/审计、首个 `trace-mark` 内部器官原型、`organAffinity` / `organStability` genome traits、生态代价、snapshot 和 UI 观测指标。
 
 ## Phase 4：记忆、学习与可解释演化
 
