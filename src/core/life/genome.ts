@@ -14,7 +14,9 @@ export const GENOME_BOUNDS: Record<keyof Genome, GenomeRange> = {
   riskTolerance: { min: 0, max: 1 },
   pressureAversion: { min: 0, max: 2.4 },
   terrainAffinity: { min: -1.2, max: 1.6 },
-  explorationBias: { min: 0, max: 1 }
+  explorationBias: { min: 0, max: 1 },
+  organAffinity: { min: 0, max: 1 },
+  organStability: { min: 0, max: 1 }
 };
 
 export function withGenomeDefaults(genome: GenomeInput): Genome {
@@ -24,6 +26,8 @@ export function withGenomeDefaults(genome: GenomeInput): Genome {
     pressureAversion: 0.95,
     terrainAffinity: 0.25,
     explorationBias: 0.24,
+    organAffinity: 0,
+    organStability: 0,
     ...genome
   };
 }
@@ -42,7 +46,9 @@ export function createGenome(random: RandomSource): Genome {
     riskTolerance: 0.18 + random() * 0.64,
     pressureAversion: 0.55 + random() * 1.1,
     terrainAffinity: -0.35 + random() * 1.1,
-    explorationBias: 0.08 + random() * 0.48
+    explorationBias: 0.08 + random() * 0.48,
+    organAffinity: 0.08 + random() * 0.5,
+    organStability: 0.18 + random() * 0.56
   });
 }
 
@@ -81,6 +87,16 @@ export function constrainGenome(genome: GenomeInput): Genome {
       resolved.explorationBias,
       GENOME_BOUNDS.explorationBias.min,
       GENOME_BOUNDS.explorationBias.max
+    ),
+    organAffinity: clamp(
+      resolved.organAffinity,
+      GENOME_BOUNDS.organAffinity.min,
+      GENOME_BOUNDS.organAffinity.max
+    ),
+    organStability: clamp(
+      resolved.organStability,
+      GENOME_BOUNDS.organStability.min,
+      GENOME_BOUNDS.organStability.max
     )
   };
 
@@ -125,7 +141,9 @@ export function cloneGenome(genome: Genome): Genome {
     riskTolerance: roundSnapshotValue(genome.riskTolerance),
     pressureAversion: roundSnapshotValue(genome.pressureAversion),
     terrainAffinity: roundSnapshotValue(genome.terrainAffinity),
-    explorationBias: roundSnapshotValue(genome.explorationBias)
+    explorationBias: roundSnapshotValue(genome.explorationBias),
+    organAffinity: roundSnapshotValue(genome.organAffinity),
+    organStability: roundSnapshotValue(genome.organStability)
   };
 }
 
@@ -145,6 +163,7 @@ function enforceGenomeTradeoffs(genome: Genome): Genome {
     Math.abs(genome.terrainAffinity) * 0.018 +
     genome.explorationBias * 0.035 +
     genome.riskTolerance * 0.018;
+  const organLoad = genome.organAffinity * 0.065 + genome.organStability * 0.032;
 
   const metabolismFloor =
     GENOME_BOUNDS.metabolism.min +
@@ -153,13 +172,15 @@ function enforceGenomeTradeoffs(genome: Genome): Genome {
     earlyReproductionLoad * 0.004 +
     resourceFocusLoad * 0.025 +
     traceLoad * 0.015 +
-    behaviorLoad;
+    behaviorLoad +
+    organLoad;
   const moveCostFloor =
     GENOME_BOUNDS.moveCost.min +
     senseLoad * 0.035 +
     harvestLoad * 0.018 +
     genome.inertia * 0.015 +
-    Math.max(0, genome.terrainAffinity) * 0.018;
+    Math.max(0, genome.terrainAffinity) * 0.018 +
+    genome.organAffinity * 0.012;
 
   return {
     ...genome,

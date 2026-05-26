@@ -35,6 +35,8 @@ function testGenome(overrides: Partial<Genome> = {}): Genome {
     pressureAversion: 0.9,
     terrainAffinity: 0.2,
     explorationBias: 0.22,
+    organAffinity: 0,
+    organStability: 0,
     ...overrides
   };
 }
@@ -1018,7 +1020,9 @@ describe("typed simulation core", () => {
         riskTolerance: -10,
         pressureAversion: 99,
         terrainAffinity: -99,
-        explorationBias: 99
+        explorationBias: 99,
+        organAffinity: 99,
+        organStability: -99
       })
     );
 
@@ -1027,6 +1031,30 @@ describe("typed simulation core", () => {
     expect(child.pressureAversion).toBeLessThanOrEqual(GENOME_BOUNDS.pressureAversion.max);
     expect(child.terrainAffinity).toBeGreaterThanOrEqual(GENOME_BOUNDS.terrainAffinity.min);
     expect(child.explorationBias).toBeLessThanOrEqual(GENOME_BOUNDS.explorationBias.max);
+    expect(child.organAffinity).toBeLessThanOrEqual(GENOME_BOUNDS.organAffinity.max);
+    expect(child.organStability).toBeGreaterThanOrEqual(GENOME_BOUNDS.organStability.min);
+  });
+
+  it("charges bounded ecological tradeoffs for organ genome traits", () => {
+    const quiet = constrainGenome(
+      testGenome({
+        metabolism: GENOME_BOUNDS.metabolism.min,
+        moveCost: GENOME_BOUNDS.moveCost.min,
+        organAffinity: GENOME_BOUNDS.organAffinity.min,
+        organStability: GENOME_BOUNDS.organStability.min
+      })
+    );
+    const organHeavy = constrainGenome(
+      testGenome({
+        metabolism: GENOME_BOUNDS.metabolism.min,
+        moveCost: GENOME_BOUNDS.moveCost.min,
+        organAffinity: GENOME_BOUNDS.organAffinity.max,
+        organStability: GENOME_BOUNDS.organStability.max
+      })
+    );
+
+    expect(organHeavy.metabolism).toBeGreaterThan(quiet.metabolism);
+    expect(organHeavy.moveCost).toBeGreaterThan(quiet.moveCost);
   });
 
   it("tracks emergent species identifiers separately from lineages", () => {
@@ -1223,6 +1251,61 @@ describe("typed simulation core", () => {
       targetKind: "cell",
       budgetSpent: 1
     });
+  });
+
+  it("lets organ genome traits shape local organ effects without expanding capabilities", () => {
+    const baseConfig = {
+      width: 12,
+      height: 8,
+      initialAgents: 0,
+      barrierThreshold: 1.01,
+      organBudgetPerTick: 4,
+      seed: 20260607
+    };
+    const quiet = new Simulation(baseConfig);
+    const organHeavy = new Simulation(baseConfig);
+    const quietAgent = quiet.spawnAgent(2, 2, testGenome({ senseRadius: 2 }), 20);
+    const organAgent = organHeavy.spawnAgent(
+      2,
+      2,
+      testGenome({
+        senseRadius: 2,
+        organAffinity: GENOME_BOUNDS.organAffinity.max,
+        organStability: GENOME_BOUNDS.organStability.max
+      }),
+      20
+    );
+    const request = {
+      capabilityId: "trace-mark" as const,
+      intent: "mark-trace" as const,
+      target: {
+        kind: "cell" as const,
+        point: { x: 3, y: 2 },
+        radius: 1
+      },
+      cost: createOrganCost({
+        energy: 0.4,
+        organBudget: 1,
+        trace: 0.2,
+        pressure: 0.05
+      })
+    };
+
+    quiet.attemptOrganAction({
+      ...request,
+      agentId: quietAgent.id
+    });
+    organHeavy.attemptOrganAction({
+      ...request,
+      agentId: organAgent.id
+    });
+
+    const idx = quiet.index(3, 2);
+    expect(organHeavy.traces[idx]).toBeGreaterThan(quiet.traces[idx]);
+    expect(organHeavy.pressure[idx]).toBeGreaterThan(quiet.pressure[idx]);
+    expect(organAgent.energy).toBeLessThan(quietAgent.energy);
+    expect(isOrganCapabilityId("shell")).toBe(false);
+    expect(organHeavy.snapshot().agents[0].genome.organAffinity).toBe(GENOME_BOUNDS.organAffinity.max);
   });
 
   it("recovers less death residue as resource in high-pressure cells", () => {

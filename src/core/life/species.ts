@@ -13,7 +13,8 @@ export function speciesForGenome(genome: Genome, biome: TerrainType, lineageId: 
     Math.floor(genome.explorationBias * 3) +
     Math.floor(genome.pressureAversion * 1.2) +
     Math.floor((genome.terrainAffinity + 1.2) * 0.8) +
-    Math.floor(genome.riskTolerance * 2);
+    Math.floor(genome.riskTolerance * 2) +
+    Math.floor(genome.organAffinity * 2);
   const metabolicBucket =
     Math.floor(genome.harvestRate * 0.7) +
     Math.floor(genome.metabolism * 1.5) +
@@ -32,6 +33,8 @@ export function speciesDistanceSignal(genome: Genome, biome: TerrainType): numbe
     genome.explorationBias * 0.36 +
     Math.abs(genome.terrainAffinity) * 0.28 +
     genome.riskTolerance * 0.18 +
+    genome.organAffinity * 0.22 +
+    genome.organStability * 0.1 +
     biomeBucketFor(biome) * 0.08
   );
 }

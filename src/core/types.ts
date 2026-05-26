@@ -77,13 +77,26 @@ export interface Genome {
   pressureAversion: number;
   terrainAffinity: number;
   explorationBias: number;
+  organAffinity: number;
+  organStability: number;
 }
 
 export type GenomeInput = Omit<
   Genome,
-  "inertia" | "riskTolerance" | "pressureAversion" | "terrainAffinity" | "explorationBias"
+  | "inertia"
+  | "riskTolerance"
+  | "pressureAversion"
+  | "terrainAffinity"
+  | "explorationBias"
+  | "organAffinity"
+  | "organStability"
 > &
-  Partial<Pick<Genome, "inertia" | "riskTolerance" | "pressureAversion" | "terrainAffinity" | "explorationBias">>;
+  Partial<
+    Pick<
+      Genome,
+      "inertia" | "riskTolerance" | "pressureAversion" | "terrainAffinity" | "explorationBias" | "organAffinity" | "organStability"
+    >
+  >;
 
 export interface GenomeRange {
   min: number;

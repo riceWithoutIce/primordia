@@ -3,8 +3,10 @@ import { mergeConfig } from "../config/schema";
 import { createGenome, cloneGenome, constrainGenome, mutateGenome, roundSnapshotValue } from "../life/genome";
 import {
   auditOrganOutcome,
+  createOrganCost,
   isOrganCapabilityId,
   refuseOrganAction,
+  type OrganActionCost,
   type OrganActionOutcome,
   type OrganActionRequest,
   type OrganAuditRecord,
@@ -309,6 +311,11 @@ export class Simulation {
       return refuseOrganAction("insufficient-budget", request);
     }
 
+    const effectiveCost = effectiveOrganActionCost(agent.genome, request.cost);
+    if (effectiveCost.energy > agent.energy) {
+      return refuseOrganAction("insufficient-budget", request);
+    }
+
     const targetCheck = this.validateOrganTarget(agent, request);
     if (targetCheck) {
       return refuseOrganAction(targetCheck, request);
@@ -320,7 +327,7 @@ export class Simulation {
       agentId: request.agentId,
       intent: request.intent,
       target: request.target,
-      cost: request.cost
+      cost: effectiveCost
     };
   }
 
@@ -356,8 +363,8 @@ export class Simulation {
       const agent = this.agents.find((candidate) => candidate.id === outcome.agentId);
       if (agent) {
         agent.energy -= outcome.cost.energy;
+        this.applyOrganEffect(outcome, agent);
       }
-      this.applyOrganEffect(outcome);
       this.organAccepted += 1;
       this.organBudgetRemaining -= outcome.cost.organBudget;
       this.organBudgetSpent += outcome.cost.organBudget;
@@ -373,14 +380,14 @@ export class Simulation {
     }
   }
 
-  private applyOrganEffect(outcome: Extract<OrganActionOutcome, { accepted: true }>): void {
+  private applyOrganEffect(outcome: Extract<OrganActionOutcome, { accepted: true }>, agent: Agent): void {
     if (outcome.capabilityId !== "trace-mark" || outcome.intent !== "mark-trace" || outcome.target.kind !== "cell") {
       return;
     }
 
     const idx = this.index(outcome.target.point.x, outcome.target.point.y);
     const radius = Math.max(0, Math.floor(outcome.target.radius));
-    const traceAmount = clamp(0.35 + outcome.cost.trace + radius * 0.12, 0, 2.2);
+    const traceAmount = clamp((0.35 + outcome.cost.trace + radius * 0.12) * organTracePotency(agent.genome), 0, 2.8);
     const pressureAmount = clamp(0.05 + outcome.cost.pressure + radius * 0.03, 0, 0.4);
     this.traces[idx] = clamp(this.traces[idx] + traceAmount, 0, 12);
     this.pressure[idx] = clamp(this.pressure[idx] + pressureAmount, 0, 4);
@@ -950,7 +957,22 @@ export function harvestPressure(genome: Genome, harvested: number): number {
 export function reproductionEfficiency(genome: Genome): number {
   const thresholdPosition = (genome.reproductionThreshold - 46) / (170 - 46);
   const behaviorDrag = genome.explorationBias * 0.025 + genome.riskTolerance * 0.02;
-  return clamp(0.72 + thresholdPosition * 0.22 - behaviorDrag, 0.68, 0.94);
+  const organDrag = genome.organAffinity * 0.03 + genome.organStability * 0.014;
+  return clamp(0.72 + thresholdPosition * 0.22 - behaviorDrag - organDrag, 0.66, 0.94);
+}
+
+export function effectiveOrganActionCost(genome: Genome, cost: OrganActionCost): OrganActionCost {
+  const affinityLoad = genome.organAffinity * (1 - genome.organStability * 0.45);
+  return createOrganCost({
+    energy: cost.energy + cost.energy * affinityLoad * 0.18 + cost.organBudget * affinityLoad * 0.05,
+    organBudget: cost.organBudget,
+    pressure: cost.pressure + cost.organBudget * genome.organAffinity * (0.04 - genome.organStability * 0.02),
+    trace: cost.trace
+  });
+}
+
+export function organTracePotency(genome: Genome): number {
+  return 1 + genome.organAffinity * (0.55 + genome.organStability * 0.22);
 }
 
 export function dominantBiome(counts: Record<TerrainType, number>): TerrainType | null {
