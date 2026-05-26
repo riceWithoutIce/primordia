@@ -36,12 +36,26 @@
           <input id="speed" type="range" min="0" max="8" value="6">
         </label>
 
-        <div class="view-modes" aria-label="map views">
-          <button class="view-mode active" id="view-resource" type="button" data-view="resource">resource</button>
-          <button class="view-mode" id="view-terrain" type="button" data-view="terrain">terrain</button>
-          <button class="view-mode" id="view-biome" type="button" data-view="biome">biome</button>
-          <button class="view-mode" id="view-pressure" type="button" data-view="pressure">pressure</button>
-          <button class="view-mode" id="view-lineage" type="button" data-view="lineage">lineage</button>
+        <div class="map-controls" aria-label="map controls">
+          <fieldset class="layer-group">
+            <legend>Base</legend>
+            <div class="layer-options">
+              <button class="base-layer active" id="base-terrain" type="button" data-base-layer="terrain">terrain</button>
+              <button class="base-layer" id="base-biome" type="button" data-base-layer="biome">biome</button>
+              <button class="base-layer" id="base-resource" type="button" data-base-layer="resource">resource</button>
+              <button class="base-layer" id="base-pressure" type="button" data-base-layer="pressure">pressure</button>
+            </div>
+          </fieldset>
+          <fieldset class="layer-group">
+            <legend>Overlays</legend>
+            <div class="layer-options">
+              <label class="overlay-toggle"><input id="overlay-resources" type="checkbox" data-overlay="resources" checked> resources</label>
+              <label class="overlay-toggle"><input id="overlay-agents" type="checkbox" data-overlay="agents" checked> agents</label>
+              <label class="overlay-toggle"><input id="overlay-processes" type="checkbox" data-overlay="processes" checked> processes</label>
+              <label class="overlay-toggle"><input id="overlay-pressure" type="checkbox" data-overlay="pressure"> pressure</label>
+              <label class="overlay-toggle"><input id="overlay-lineages" type="checkbox" data-overlay="lineages"> lineages</label>
+            </div>
+          </fieldset>
         </div>
 
         <dl class="metrics">

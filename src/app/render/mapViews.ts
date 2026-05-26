@@ -1,5 +1,5 @@
 import type { EnvironmentCell } from "../../core/primordia";
-import type { ViewMode } from "./mapViewTypes";
+import type { BaseLayer, OverlayState } from "./mapViewTypes";
 import { BIOME_PALETTE, TERRAIN_PALETTE, mixRgb, shadeRgb, type Rgb } from "./palettes";
 
 export interface TerrainRenderConfig {
@@ -10,6 +10,9 @@ export interface TerrainRenderConfig {
   coastLineWidth: number;
   moistureTintStrength: number;
   snowLine: number;
+  resourceOverlayStrength: number;
+  pressureOverlayStrength: number;
+  lineageOverlayStrength: number;
 }
 
 export const TERRAIN_RENDER_CONFIG: TerrainRenderConfig = {
@@ -19,36 +22,60 @@ export const TERRAIN_RENDER_CONFIG: TerrainRenderConfig = {
   coastElevation: 0.27,
   coastLineWidth: 0.012,
   moistureTintStrength: 0.16,
-  snowLine: 0.78
+  snowLine: 0.78,
+  resourceOverlayStrength: 0.42,
+  pressureOverlayStrength: 0.38,
+  lineageOverlayStrength: 0.18
 };
 
 export function paintMapCell(
   data: Uint8ClampedArray,
   offset: number,
   cell: EnvironmentCell,
-  viewMode: ViewMode,
+  baseLayer: BaseLayer,
+  overlays: OverlayState,
   resourceCap: number
 ): void {
-  const color = colorForCell(cell, viewMode, resourceCap);
+  const color = colorForCell(cell, baseLayer, overlays, resourceCap);
   data[offset] = color[0];
   data[offset + 1] = color[1];
   data[offset + 2] = color[2];
   data[offset + 3] = 255;
 }
 
-export function colorForCell(cell: EnvironmentCell, viewMode: ViewMode, resourceCap: number): [number, number, number] {
-  switch (viewMode) {
+export function colorForCell(
+  cell: EnvironmentCell,
+  baseLayer: BaseLayer,
+  overlays: OverlayState,
+  resourceCap: number
+): [number, number, number] {
+  let color: [number, number, number];
+  switch (baseLayer) {
     case "terrain":
-      return terrainColor(cell);
+      color = terrainColor(cell);
+      break;
     case "biome":
-      return biomeColor(cell);
+      color = biomeColor(cell);
+      break;
     case "pressure":
-      return pressureColor(cell);
-    case "lineage":
-      return lineageBackgroundColor(cell);
+      color = pressureColor(cell);
+      break;
     case "resource":
-      return resourceColor(cell, resourceCap);
+      color = resourceColor(cell, resourceCap);
+      break;
   }
+
+  if (overlays.resources && baseLayer !== "resource") {
+    color = applyResourceOverlay(color, cell, resourceCap);
+  }
+  if (overlays.pressure && baseLayer !== "pressure") {
+    color = applyPressureOverlay(color, cell);
+  }
+  if (overlays.lineages) {
+    color = applyLineageOverlay(color, cell);
+  }
+
+  return color;
 }
 
 export function terrainColor(cell: EnvironmentCell, config = TERRAIN_RENDER_CONFIG): [number, number, number] {
@@ -93,6 +120,29 @@ export function pressureColor(cell: EnvironmentCell): [number, number, number] {
 export function lineageBackgroundColor(cell: EnvironmentCell): [number, number, number] {
   const fertility = Math.min(cell.fertility, 1);
   return [Math.floor(12 + fertility * 34), Math.floor(16 + fertility * 48), Math.floor(18 + fertility * 38)];
+}
+
+export function applyResourceOverlay(color: Rgb, cell: EnvironmentCell, resourceCap: number): [number, number, number] {
+  const amount = resourceCap > 0 ? Math.min(cell.resource / resourceCap, 1) : 0;
+  if (amount <= 0.02) {
+    return [...color] as [number, number, number];
+  }
+
+  return mixRgb(color, [126, 225, 118], amount * TERRAIN_RENDER_CONFIG.resourceOverlayStrength);
+}
+
+export function applyPressureOverlay(color: Rgb, cell: EnvironmentCell): [number, number, number] {
+  const amount = Math.min(cell.pressure / 4, 1);
+  if (amount <= 0.02) {
+    return [...color] as [number, number, number];
+  }
+
+  return mixRgb(color, [224, 76, 84], amount * TERRAIN_RENDER_CONFIG.pressureOverlayStrength);
+}
+
+export function applyLineageOverlay(color: Rgb, cell: EnvironmentCell): [number, number, number] {
+  const fertility = Math.min(cell.fertility, 1);
+  return mixRgb(color, [236, 212, 104], fertility * TERRAIN_RENDER_CONFIG.lineageOverlayStrength);
 }
 
 export function resourceColor(cell: EnvironmentCell, resourceCap: number): [number, number, number] {

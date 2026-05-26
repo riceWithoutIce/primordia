@@ -6,7 +6,15 @@ import {
   type ExperimentSnapshot
 } from "../core/primordia";
 import { lineageFillStyle } from "./lineageColor";
-import { isViewMode, type ViewMode } from "./render/mapViewTypes";
+import {
+  DEFAULT_BASE_LAYER,
+  DEFAULT_OVERLAYS,
+  isBaseLayer,
+  isOverlayLayer,
+  type BaseLayer,
+  type OverlayLayer,
+  type OverlayState
+} from "./render/mapViewTypes";
 import { paintMapCell } from "./render/mapViews";
 import "./styles.css";
 
@@ -18,7 +26,8 @@ let lastFrameTime = 0;
 let tickAccumulator = 0;
 let lastSnapshot: ExperimentSnapshot | null = null;
 let lastSnapshotJson = "";
-let viewMode: ViewMode = "resource";
+let baseLayer: BaseLayer = DEFAULT_BASE_LAYER;
+let overlays: OverlayState = { ...DEFAULT_OVERLAYS };
 let renderBuffer: HTMLCanvasElement | null = null;
 let renderBufferCtx: CanvasRenderingContext2D | null = null;
 
@@ -31,7 +40,8 @@ const snapshot = getElement<HTMLButtonElement>("snapshot");
 const copySnapshot = getElement<HTMLButtonElement>("copy-snapshot");
 const downloadSnapshot = getElement<HTMLButtonElement>("download-snapshot");
 const snapshotStatus = getElement<HTMLOutputElement>("snapshot-status");
-const viewButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".view-mode"));
+const baseLayerButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".base-layer"));
+const overlayInputs = Array.from(document.querySelectorAll<HTMLInputElement>("[data-overlay]"));
 
 const metrics = {
   tick: getElement<HTMLElement>("m-tick"),
@@ -100,14 +110,27 @@ downloadSnapshot.addEventListener("click", () => {
   downloadSnapshotJson();
 });
 
-for (const button of viewButtons) {
+for (const button of baseLayerButtons) {
   button.addEventListener("click", () => {
-    const nextView = button.dataset.view;
-    if (isViewMode(nextView)) {
-      viewMode = nextView;
-      for (const item of viewButtons) {
+    const nextBaseLayer = button.dataset.baseLayer;
+    if (isBaseLayer(nextBaseLayer)) {
+      baseLayer = nextBaseLayer;
+      for (const item of baseLayerButtons) {
         item.classList.toggle("active", item === button);
       }
+      render();
+    }
+  });
+}
+
+for (const input of overlayInputs) {
+  input.addEventListener("change", () => {
+    const overlay = input.dataset.overlay;
+    if (isOverlayLayer(overlay)) {
+      overlays = {
+        ...overlays,
+        [overlay]: input.checked
+      };
       render();
     }
   });
@@ -144,7 +167,7 @@ function render(): void {
   for (let i = 0; i < sim.size; i += 1) {
     const cell = sim.environmentAt(i);
     const offset = i * 4;
-    paintMapCell(data, offset, cell, viewMode, sim.config.resourceCap);
+    paintMapCell(data, offset, cell, baseLayer, overlays, sim.config.resourceCap);
   }
 
   const { buffer, bufferCtx } = getRenderBuffer(sim.width, sim.height);
@@ -154,15 +177,17 @@ function render(): void {
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(buffer, 0, 0, canvas.width, canvas.height);
 
-  if (viewMode !== "terrain" && viewMode !== "biome") {
+  if (overlays.agents) {
     for (const agent of sim.agents) {
       drawAgent(agent, cellW, cellH);
     }
   }
 
   const m = sim.metrics();
-  drawEventPulse(m.lastEvent, cellW, cellH);
-  drawProcessPulse(m.lastProcess, cellW, cellH);
+  if (overlays.processes) {
+    drawEventPulse(m.lastEvent, cellW, cellH);
+    drawProcessPulse(m.lastProcess, cellW, cellH);
+  }
   updateMetrics(m);
 }
 

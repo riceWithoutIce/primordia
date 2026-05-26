@@ -52,6 +52,10 @@ Manual validation still recommended:
 - moisture-front process rings and process metrics are observable after enough ticks
 - snapshot JSON exports with `schemaVersion: 2`
 
+## Follow-Up Review Notes
+
+- Phase 2.2.16 introduced the first base-layer plus overlay-layer map controls. The default view is `terrain` with resource, agent, and process overlays enabled. Future review should focus on whether new layers such as species, rivers, wind, migration, and death heatmaps belong as optional overlays, not as additional top-level mode buttons.
+
 ## Result
 
 Phase 2.2 has an implemented first pass. The project now has a larger world model, explicit terrain/biome foundations, continuous environment processes, behavior differentiation, species/clade observability, and a core architecture better suited for Phase 3.

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { lineageColorFor, lineageHue } from "../src/app/lineageColor";
 import { BIOME_PALETTE } from "../src/app/render/palettes";
 import { TERRAIN_RENDER_CONFIG, terrainColor } from "../src/app/render/mapViews";
+import { DEFAULT_BASE_LAYER, DEFAULT_OVERLAYS } from "../src/app/render/mapViewTypes";
 import { Simulation } from "../src/core/primordia";
 
 describe("primordia simulation smoke", () => {
@@ -74,17 +75,35 @@ describe("primordia simulation smoke", () => {
     }
   });
 
-  it("keeps map view controls wired in the page shell", () => {
+  it("keeps base map and overlay controls wired in the page shell", () => {
     const html = readFileSync("index.html", "utf8");
-    const viewIds = ["view-resource", "view-terrain", "view-biome", "view-pressure", "view-lineage"];
+    const controlIds = [
+      "base-terrain",
+      "base-biome",
+      "base-resource",
+      "base-pressure",
+      "overlay-resources",
+      "overlay-agents",
+      "overlay-processes",
+      "overlay-pressure",
+      "overlay-lineages"
+    ];
 
-    for (const id of viewIds) {
+    for (const id of controlIds) {
       expect(html).toContain(`id="${id}"`);
     }
+
+    expect(html).toContain("data-base-layer=\"terrain\"");
+    expect(html).toContain("data-overlay=\"resources\" checked");
   });
 
   it("keeps terrain visualization configurable and covers cold biomes", () => {
     expect(TERRAIN_RENDER_CONFIG.contourInterval).toBeGreaterThan(0);
+    expect(DEFAULT_BASE_LAYER).toBe("terrain");
+    expect(DEFAULT_OVERLAYS.resources).toBe(true);
+    expect(DEFAULT_OVERLAYS.agents).toBe(true);
+    expect(DEFAULT_OVERLAYS.processes).toBe(true);
+    expect(DEFAULT_OVERLAYS.pressure).toBe(false);
     expect(BIOME_PALETTE.snow).toBeDefined();
     expect(BIOME_PALETTE.tundra).toBeDefined();
 

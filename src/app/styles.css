@@ -104,7 +104,27 @@ h1 {
   gap: 8px;
 }
 
-.view-modes {
+.map-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.layer-group {
+  min-width: 0;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.layer-group legend {
+  padding: 0 5px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.layer-options {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -130,7 +150,7 @@ button:disabled {
   background: #121718;
 }
 
-.view-mode {
+.base-layer {
   flex: 1 1 78px;
   min-width: 0;
   min-height: 34px;
@@ -142,10 +162,33 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
-.view-mode.active {
+.base-layer.active {
   border-color: #d7e58a;
   color: #f4f7d0;
   background: #29302a;
+}
+
+.overlay-toggle {
+  flex: 1 1 96px;
+  min-width: 0;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  background: #14191a;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.overlay-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--agent);
 }
 
 .snapshot-status {
