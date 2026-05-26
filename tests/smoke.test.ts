@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { Simulation } from "../src/core/primordia";
 
 describe("primordia simulation smoke", () => {
@@ -24,5 +25,29 @@ describe("primordia simulation smoke", () => {
     const replay = new Simulation(config);
     replay.step(120);
     expect(replay.metrics()).toEqual(metrics);
+  });
+
+  it("keeps the metrics panel wired to the observable fields", () => {
+    const html = readFileSync("index.html", "utf8");
+    const metricIds = [
+      "m-tick",
+      "m-seed",
+      "m-agents",
+      "m-lineages",
+      "m-resource",
+      "m-trace",
+      "m-pressure",
+      "m-energy",
+      "m-generation",
+      "m-births",
+      "m-deaths",
+      "m-death-starvation",
+      "m-death-pressure",
+      "m-death-overflow"
+    ];
+
+    for (const id of metricIds) {
+      expect(html).toContain(`id="${id}"`);
+    }
   });
 });

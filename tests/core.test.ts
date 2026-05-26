@@ -160,6 +160,24 @@ describe("typed simulation core", () => {
     expect(after.totalTrace).toBeGreaterThan(beforeTrace);
   });
 
+  it("reports seed and aggregate environmental pressure in metrics", () => {
+    const sim = new Simulation({
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      seed: 20260526
+    });
+    const idx = sim.index(2, 2);
+    sim.pressure[idx] = 2.5;
+
+    const metrics = sim.metrics();
+
+    expect(metrics.seed).toBe(20260526);
+    expect(metrics.totalPressure).toBeGreaterThanOrEqual(2.5);
+    expect(metrics.totalResource).toBeGreaterThanOrEqual(0);
+    expect(metrics.totalTrace).toBeGreaterThanOrEqual(0);
+  });
+
   it("assigns independent lineage ids to initial spawned agents", () => {
     const sim = new Simulation({
       environmentMode: "closed",

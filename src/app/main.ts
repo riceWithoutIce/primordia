@@ -16,8 +16,12 @@ const reset = getElement<HTMLButtonElement>("reset");
 
 const metrics = {
   tick: getElement<HTMLElement>("m-tick"),
+  seed: getElement<HTMLElement>("m-seed"),
   agents: getElement<HTMLElement>("m-agents"),
   lineages: getElement<HTMLElement>("m-lineages"),
+  totalResource: getElement<HTMLElement>("m-resource"),
+  totalTrace: getElement<HTMLElement>("m-trace"),
+  totalPressure: getElement<HTMLElement>("m-pressure"),
   energy: getElement<HTMLElement>("m-energy"),
   generation: getElement<HTMLElement>("m-generation"),
   births: getElement<HTMLElement>("m-births"),
@@ -137,8 +141,12 @@ function drawAgent(agent: Agent, cellW: number, cellH: number): void {
 function updateMetrics(): void {
   const m = sim.metrics();
   metrics.tick.textContent = String(m.tick);
+  metrics.seed.textContent = String(m.seed);
   metrics.agents.textContent = String(m.agents);
   metrics.lineages.textContent = String(m.lineageCount);
+  metrics.totalResource.textContent = formatTotal(m.totalResource);
+  metrics.totalTrace.textContent = formatTotal(m.totalTrace);
+  metrics.totalPressure.textContent = formatTotal(m.totalPressure);
   metrics.energy.textContent = m.averageEnergy.toFixed(1);
   metrics.generation.textContent = String(m.maxGeneration);
   metrics.births.textContent = String(m.births);
@@ -146,6 +154,10 @@ function updateMetrics(): void {
   metrics.deathStarvation.textContent = String(m.deathReasons.starvation);
   metrics.deathPressure.textContent = String(m.deathReasons.pressure);
   metrics.deathOverflow.textContent = String(m.deathReasons.overflow);
+}
+
+function formatTotal(value: number): string {
+  return Math.round(value).toLocaleString("zh-CN");
 }
 
 function tickRate(): number {

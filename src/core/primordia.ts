@@ -75,6 +75,7 @@ export interface DeathStats {
 
 export interface Metrics {
   tick: number;
+  seed: number;
   agents: number;
   births: number;
   deaths: number;
@@ -84,6 +85,7 @@ export interface Metrics {
   deathReasons: DeathStats;
   totalResource: number;
   totalTrace: number;
+  totalPressure: number;
 }
 
 export const DEFAULTS: SimulationConfig = {
@@ -565,13 +567,16 @@ export class Simulation {
 
     let totalResource = 0;
     let totalTrace = 0;
+    let totalPressure = 0;
     for (let i = 0; i < this.size; i += 1) {
       totalResource += this.resources[i];
       totalTrace += this.traces[i];
+      totalPressure += this.pressure[i];
     }
 
     return {
       tick: this.tickCount,
+      seed: this.config.seed,
       agents: this.agents.length,
       births: this.births,
       deaths: this.deaths,
@@ -580,7 +585,8 @@ export class Simulation {
       lineageCount: lineages.size,
       deathReasons: { ...this.deathReasons },
       totalResource,
-      totalTrace
+      totalTrace,
+      totalPressure
     };
   }
 }
