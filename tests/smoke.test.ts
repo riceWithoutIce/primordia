@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { lineageColorFor, lineageHue } from "../src/app/lineageColor";
 import { Simulation } from "../src/core/primordia";
 
 describe("primordia simulation smoke", () => {
@@ -49,5 +50,16 @@ describe("primordia simulation smoke", () => {
     for (const id of metricIds) {
       expect(html).toContain(`id="${id}"`);
     }
+  });
+
+  it("maps lineage ids to stable visual colors", () => {
+    const parent = { lineageId: 7, generation: 0 };
+    const descendant = { lineageId: 7, generation: 6 };
+    const neighbor = { lineageId: 8, generation: 0 };
+
+    expect(lineageHue(parent.lineageId)).toBe(lineageHue(descendant.lineageId));
+    expect(lineageColorFor(parent).hue).toBe(lineageColorFor(descendant).hue);
+    expect(lineageColorFor(parent).lightness).toBeGreaterThan(lineageColorFor(descendant).lightness);
+    expect(lineageHue(parent.lineageId)).not.toBe(lineageHue(neighbor.lineageId));
   });
 });

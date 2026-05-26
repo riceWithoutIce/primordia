@@ -1,4 +1,5 @@
 import { Simulation, type Agent } from "../core/primordia";
+import { lineageFillStyle } from "./lineageColor";
 import "./styles.css";
 
 const { canvas, ctx } = getCanvasContext();
@@ -122,11 +123,10 @@ function drawAgent(agent: Agent, cellW: number, cellH: number): void {
   const x = (agent.x + 0.5) * cellW;
   const y = (agent.y + 0.5) * cellH;
   const radius = Math.max(2.2, Math.min(cellW, cellH) * 0.42);
-  const hue = 44 + (agent.generation * 11) % 90;
 
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = `hsl(${hue} 86% 68%)`;
+  ctx.fillStyle = lineageFillStyle(agent);
   ctx.fill();
 
   if (agent.lastAction === "divide") {
