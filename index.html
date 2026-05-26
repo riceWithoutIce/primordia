@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>未形 / primordia</title>
-    <script type="module" crossorigin src="/primordia/assets/index-Bym9CtMl.js"></script>
+    <script type="module" crossorigin src="/primordia/assets/index-C7bvgQsK.js"></script>
     <link rel="stylesheet" crossorigin href="/primordia/assets/index-MlmVOD0D.css">
   </head>
   <body>
@@ -27,15 +27,19 @@
         </div>
 
         <label class="slider">
-          <span>速度 <output id="speed-label">4 tick/s</output></span>
-          <input id="speed" type="range" min="0" max="8" value="4">
+          <span>速度 <output id="speed-label">16 tick/s</output></span>
+          <input id="speed" type="range" min="0" max="8" value="6">
         </label>
 
         <dl class="metrics">
           <div><dt>tick</dt><dd id="m-tick">0</dd></div>
           <div><dt>seed</dt><dd id="m-seed">0</dd></div>
           <div><dt>生命</dt><dd id="m-agents">0</dd></div>
-          <div><dt>谱系</dt><dd id="m-lineages">0</dd></div>
+          <div><dt>活跃谱系</dt><dd id="m-lineages">0</dd></div>
+          <div><dt>总谱系</dt><dd id="m-lineages-total">0</dd></div>
+          <div><dt>灭绝谱系</dt><dd id="m-lineages-extinct">0</dd></div>
+          <div><dt>优势谱系</dt><dd id="m-dominant-lineage">-</dd></div>
+          <div><dt>优势占比</dt><dd id="m-dominant-share">0%</dd></div>
           <div><dt>总资源</dt><dd id="m-resource">0</dd></div>
           <div><dt>总痕迹</dt><dd id="m-trace">0</dd></div>
           <div><dt>总压力</dt><dd id="m-pressure">0</dd></div>
