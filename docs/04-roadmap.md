@@ -35,6 +35,12 @@
 - agent 能繁殖、变异、死亡，并把残余影响交还环境。
 - 同一个 seed 能复现同一类演化过程。
 
+当前状态：
+
+- Phase 1.1 到 Phase 1.10 已完成：TypeScript/Vite 迁移、typed core、closed/flux 环境、agent 生存循环、死亡原因与残余回收、谱系追踪、genome 边界与生态代价、观察指标、确定性测试和 GitHub Pages 静态部署。
+- 公开页面：<https://ricewithoutice.github.io/primordia/>
+- 下一步是 Phase 1.11 文档收尾和 Phase 1.12 验收评审；通过后再进入 Phase 2。
+
 ## Phase 2：生态与谱系
 
 核心问题：多个生命闭环能不能形成生态？

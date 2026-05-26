@@ -17,6 +17,16 @@
 
 项目只在本地可控环境中模拟生命机制。所有 agent 都是数据结构，不拥有真实网络、文件系统、凭证或系统权限。
 
+## 当前状态
+
+Phase 1 最小生命闭环已经完成到公开部署前的验收阶段：
+
+- TypeScript core 支持 `closed` / `flux` 环境、有限资源通量、代谢、移动、采集、留痕、繁殖、变异、死亡原因和死亡残余回收。
+- genome 变异被固定边界收束，高感知、高采集、低繁殖阈值等优势带有生态代价。
+- UI 展示 tick、seed、生命数量、谱系数量、总资源、总痕迹、总压力、平均能量、最高世代、出生与死亡原因统计。
+- `npm run test` 覆盖 DOM-free core、deterministic replay、closed 灭绝、flux 有界输入、death recovery、genome bounds、population cap 和 UI 指标绑定。
+- 公开静态页面：<https://ricewithoutice.github.io/primordia/>
+
 ## 当前骨架
 
 ```text
@@ -61,6 +71,29 @@ http://127.0.0.1:5173/
 ```powershell
 npm run check
 ```
+
+运行测试：
+
+```powershell
+npm run test
+```
+
+生产构建：
+
+```powershell
+npm run build
+```
+
+## 复现实验
+
+仿真由 `SimulationConfig.seed` 驱动；同一 seed、同一配置和同一 tick 数应产生同一类演化过程。UI 面板显示当前 seed，点击重置会生成新的 seed。需要固定复现时，在代码或测试中显式传入 seed，例如：
+
+```ts
+const sim = new Simulation({ seed: 20260523 });
+sim.step(120);
+```
+
+当前第一阶段不包含真实 LLM API、真实互联网输入、外部工具生命、shell 行为器官或 agent 侧文件/凭证访问。GitHub Pages 只发布静态 `dist/` 页面。
 
 ## 文档入口
 

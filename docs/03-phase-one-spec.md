@@ -127,12 +127,36 @@ genome 是第一版 DNA：
 ## 观察指标
 
 - tick
+- seed
 - 存活数量
+- 谱系数量
 - 总资源量
 - 总痕迹量
+- 总压力
 - 平均能量
 - 最高世代
 - 出生与死亡计数
+- 饥饿、压力、溢出三类死亡原因计数
+
+## 运行、测试与部署
+
+本地运行：
+
+```powershell
+npm run dev
+```
+
+自动验证：
+
+```powershell
+npm run test
+npm run check
+npm run build
+```
+
+测试必须保持 DOM-free core 可验证，覆盖同 seed 同配置同 tick 的 deterministic replay、`closed` 无资源输入后的自然灭绝、`flux` 有界资源输入、death recovery、genome bounds、population cap 和 UI 指标绑定。
+
+公开部署只发布 Vite 生产构建后的静态 `dist/` 内容到 GitHub Pages：<https://ricewithoutice.github.io/primordia/>。公开页面不接真实 API，不读取外部互联网输入，不执行外部工具，也不包含私有 Project 链接或机器硬路径。
 
 ## 成功标准
 

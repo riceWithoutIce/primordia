@@ -21,7 +21,7 @@
 
 ## 当前阶段
 
-Phase 1.1：工程迁移已完成，进入用户本地手动验证前。
+Phase 1：最小生命闭环已完成到最终验收前。
 
 - 项目起源已经沉积到 `docs/origin.md`。
 - 基础文档结构已经建立。
@@ -39,6 +39,9 @@ Phase 1.1：工程迁移已完成，进入用户本地手动验证前。
 - 2026-05-25：Phase 1.6 lineage tracking 已完成初版：初代 agent 获得独立 `lineageId`，后代继承父代谱系，metrics 与 UI 显示当前存活谱系数量；Vitest 覆盖初代谱系独立性、繁殖谱系继承和最高世代。
 - 2026-05-25：Phase 1.7 genome bounds and tradeoffs 已完成初版：集中 `GENOME_BOUNDS` 与 `constrainGenome`，spawn 和 mutation 都收束 genome；大感知、高采集、高资源偏好、高痕迹亲和、低繁殖阈值会转化为代谢、移动成本、局部 pressure 或繁殖损耗；Vitest 覆盖 genome 边界、突变边界和生态代价。
 - 2026-05-25：Phase 1.7 后人工观察：修正速度滑条后，低速观察已经能看到一些不一样的表现，说明生态代价和谱系/资源机制开始产生可感知差异；后续调参和 Phase 1.8 观察指标应继续服务于“肉眼能看见生命过程”。
+- 2026-05-26：Phase 1.8 observability metrics 已完成：core metrics 和 UI 展示当前 seed、生命数量、谱系数量、总资源、总痕迹、总压力、平均能量、最高世代、出生与饥饿/压力/溢出死亡原因统计；指标随 step/reset 更新，不引入外部数据源。
+- 2026-05-26：Phase 1.9 deterministic test suite 已完成：`npm run test` 可运行 DOM-free Vitest；覆盖完整快照 replay、closed 自然灭绝、flux 有界生命周期、death recovery、genome bounds、population cap 和 UI 指标绑定；`npm run check` 覆盖 typecheck 与 tests。
+- 2026-05-26：Phase 1.10 GitHub Pages 已完成：生产构建发布到 `gh-pages` 分支，Pages source 为 `gh-pages /`，公开 URL 为 <https://ricewithoutice.github.io/primordia/>；已验证 HTML/JS/CSS 返回 HTTP 200。仍建议用户用浏览器人工确认 Canvas 非空和按钮交互。
 
 ## 当前优先级
 
@@ -46,7 +49,7 @@ Phase 1.1：工程迁移已完成，进入用户本地手动验证前。
 2. 让培养皿稳定、可观察、可暂停、可重置。
 3. 让生命感先于智能感出现。
 4. 记录实验参数和观察结果。
-5. 推进 Phase 1：最小生命闭环。
+5. 完成 Phase 1.12 验收评审后再进入 Phase 2。
 
 ## 未来研究线
 
