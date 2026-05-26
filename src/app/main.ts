@@ -61,6 +61,11 @@ const metrics = {
   lastProcess: getElement<HTMLElement>("m-last-process"),
   species: getElement<HTMLElement>("m-species"),
   dominantSpecies: getElement<HTMLElement>("m-dominant-species"),
+  organAttempts: getElement<HTMLElement>("m-organ-attempts"),
+  organAccepted: getElement<HTMLElement>("m-organ-accepted"),
+  organRefused: getElement<HTMLElement>("m-organ-refused"),
+  organBudget: getElement<HTMLElement>("m-organ-budget"),
+  organRefusal: getElement<HTMLElement>("m-organ-refusal"),
   moisture: getElement<HTMLElement>("m-moisture"),
   energy: getElement<HTMLElement>("m-energy"),
   generation: getElement<HTMLElement>("m-generation"),
@@ -284,6 +289,11 @@ function updateMetrics(m = sim.metrics()): void {
   metrics.lastProcess.textContent = formatProcess(m.lastProcess);
   metrics.species.textContent = String(m.speciesCount);
   metrics.dominantSpecies.textContent = m.speciesFate.dominantId === null ? "-" : `#${m.speciesFate.dominantId}`;
+  metrics.organAttempts.textContent = String(m.organAttempts);
+  metrics.organAccepted.textContent = String(m.organAccepted);
+  metrics.organRefused.textContent = String(m.organRefused);
+  metrics.organBudget.textContent = formatTotal(m.organBudgetSpent);
+  metrics.organRefusal.textContent = m.organDominantRefusalReason ?? "-";
   metrics.moisture.textContent = formatTotal(m.totalMoisture);
   metrics.energy.textContent = m.averageEnergy.toFixed(1);
   metrics.generation.textContent = String(m.maxGeneration);
