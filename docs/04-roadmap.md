@@ -108,6 +108,12 @@
 - 工具优势伴随生态代价。
 - 工具系统不会改变不可进化层。
 
+当前状态：
+
+- Phase 3 已进入安全设计与任务拆分阶段。
+- 行为器官边界规格见 [Phase 3 Behavior Organ Boundaries](07-phase-three-organ-boundaries.md)。
+- Phase 3 的“工具”只允许是培养皿内部的模拟器官动作，不允许真实网络、文件系统、shell、凭证、token、外部 API 或浏览器权限。
+
 ## Phase 4：记忆、学习与可解释演化
 
 核心问题：生命能不能从历史中形成可遗传的行为结构？

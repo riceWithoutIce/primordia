@@ -8,6 +8,10 @@ import {
   isBarrierAt,
   movementCostAt,
   movementTerrainAt,
+  auditOrganOutcome,
+  createOrganCost,
+  isOrganCapabilityId,
+  refuseOrganAction,
   resourceFertilityAt,
   resourceTerrainAt,
   type EnvironmentCell,
@@ -1049,6 +1053,176 @@ describe("typed simulation core", () => {
     expect(agent.speciesId).not.toBe(agent.lineageId);
     expect(sim.metrics().speciesFate.total).toBe(1);
     expect(sim.snapshot().species[0].speciesId).toBe(agent.speciesId);
+  });
+
+  it("models Phase 3 organ actions without host capabilities", () => {
+    expect(isOrganCapabilityId("sense-pulse")).toBe(true);
+    expect(isOrganCapabilityId("shell")).toBe(false);
+    expect(isOrganCapabilityId("network")).toBe(false);
+
+    const cost = createOrganCost({
+      energy: -10,
+      organBudget: 2.5,
+      pressure: 0.2
+    });
+    expect(cost).toEqual({
+      energy: 0,
+      organBudget: 2.5,
+      pressure: 0.2,
+      trace: 0
+    });
+
+    const refused = refuseOrganAction("unsafe-request", {
+      agentId: 7,
+      intent: "sense"
+    });
+    expect(refused.accepted).toBe(false);
+    expect(refused.refusalReason).toBe("unsafe-request");
+    expect(auditOrganOutcome(12, refused)).toEqual({
+      tick: 12,
+      accepted: false,
+      capabilityId: "unknown",
+      agentId: 7,
+      intent: "sense",
+      targetKind: "none",
+      refusalReason: "unsafe-request",
+      budgetSpent: 0
+    });
+
+    const accepted = auditOrganOutcome(13, {
+      accepted: true,
+      capabilityId: "trace-mark",
+      agentId: 8,
+      intent: "mark-trace",
+      target: {
+        kind: "cell",
+        point: { x: 2, y: 3 },
+        radius: 1
+      },
+      cost: createOrganCost({ organBudget: 1.25, energy: 0.5 })
+    });
+    expect(accepted).toMatchObject({
+      tick: 13,
+      accepted: true,
+      capabilityId: "trace-mark",
+      agentId: 8,
+      intent: "mark-trace",
+      targetKind: "cell",
+      refusalReason: null,
+      budgetSpent: 1.25
+    });
+  });
+
+  it("budgets refuses and audits simulated organ actions without side effects", () => {
+    const sim = new Simulation({
+      width: 12,
+      height: 8,
+      initialAgents: 0,
+      barrierThreshold: 1.01,
+      organBudgetPerTick: 2,
+      organAuditLimit: 3,
+      seed: 20260605
+    });
+    const agent = sim.spawnAgent(2, 2, testGenome({ senseRadius: 1 }), 20);
+    const accepted = sim.attemptOrganAction({
+      capabilityId: "sense-pulse",
+      agentId: agent.id,
+      intent: "sense",
+      target: {
+        kind: "cell",
+        point: { x: 2, y: 2 },
+        radius: 1
+      },
+      cost: createOrganCost({ organBudget: 1.5, energy: 0.25 })
+    });
+    const overBudget = sim.attemptOrganAction({
+      capabilityId: "resource-probe",
+      agentId: agent.id,
+      intent: "probe-resource",
+      target: {
+        kind: "cell",
+        point: { x: 2, y: 2 },
+        radius: 1
+      },
+      cost: createOrganCost({ organBudget: 1 })
+    });
+    const outOfRange = sim.attemptOrganAction({
+      capabilityId: "trace-mark",
+      agentId: agent.id,
+      intent: "mark-trace",
+      target: {
+        kind: "cell",
+        point: { x: 8, y: 2 },
+        radius: 1
+      },
+      cost: createOrganCost({ organBudget: 0.1 })
+    });
+
+    expect(accepted.accepted).toBe(true);
+    expect(agent.energy).toBeCloseTo(19.75);
+    expect(overBudget).toMatchObject({ accepted: false, refusalReason: "insufficient-budget" });
+    expect(outOfRange).toMatchObject({ accepted: false, refusalReason: "out-of-range" });
+
+    const metrics = sim.metrics();
+    expect(metrics.organAttempts).toBe(3);
+    expect(metrics.organAccepted).toBe(1);
+    expect(metrics.organRefused).toBe(2);
+    expect(metrics.organBudgetSpent).toBe(1.5);
+    expect(metrics.organDominantRefusalReason).toBe("insufficient-budget");
+
+    const snapshot = sim.snapshot();
+    expect(snapshot.organs).toMatchObject({
+      attempts: 3,
+      accepted: 1,
+      refused: 2,
+      budgetSpent: 1.5,
+      budgetRemaining: 0.5,
+      dominantRefusalReason: "insufficient-budget"
+    });
+    expect(snapshot.organs.recentAudit).toHaveLength(3);
+    expect(snapshot.organs.recentAudit[0].capabilityId).toBe("sense-pulse");
+  });
+
+  it("applies the first trace-mark organ only inside the local simulation fields", () => {
+    const sim = new Simulation({
+      width: 12,
+      height: 8,
+      initialAgents: 0,
+      barrierThreshold: 1.01,
+      organBudgetPerTick: 4,
+      seed: 20260606
+    });
+    const agent = sim.spawnAgent(2, 2, testGenome({ senseRadius: 2 }), 20);
+    const idx = sim.index(3, 2);
+    const beforeTrace = sim.traces[idx];
+    const beforePressure = sim.pressure[idx];
+    const outcome = sim.attemptOrganAction({
+      capabilityId: "trace-mark",
+      agentId: agent.id,
+      intent: "mark-trace",
+      target: {
+        kind: "cell",
+        point: { x: 3, y: 2 },
+        radius: 1
+      },
+      cost: createOrganCost({
+        energy: 0.4,
+        organBudget: 1,
+        trace: 0.2,
+        pressure: 0.05
+      })
+    });
+
+    expect(outcome.accepted).toBe(true);
+    expect(agent.energy).toBeCloseTo(19.6);
+    expect(sim.traces[idx]).toBeGreaterThan(beforeTrace);
+    expect(sim.pressure[idx]).toBeGreaterThan(beforePressure);
+    expect(sim.snapshot().organs.recentAudit.at(-1)).toMatchObject({
+      accepted: true,
+      capabilityId: "trace-mark",
+      targetKind: "cell",
+      budgetSpent: 1
+    });
   });
 
   it("recovers less death residue as resource in high-pressure cells", () => {

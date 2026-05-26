@@ -23,6 +23,8 @@ export const DEFAULTS: SimulationConfig = {
   pressureDiffusion: 0.055,
   pressureGrowth: 0.012,
   reproductionShare: 0.46,
+  organBudgetPerTick: 18,
+  organAuditLimit: 96,
   seed: 1337
 };
 

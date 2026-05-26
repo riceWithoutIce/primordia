@@ -1,6 +1,15 @@
 import { createDeathStats } from "../config/defaults";
 import { mergeConfig } from "../config/schema";
 import { createGenome, cloneGenome, constrainGenome, mutateGenome, roundSnapshotValue } from "../life/genome";
+import {
+  auditOrganOutcome,
+  isOrganCapabilityId,
+  refuseOrganAction,
+  type OrganActionOutcome,
+  type OrganActionRequest,
+  type OrganAuditRecord,
+  type OrganRefusalReason
+} from "../life/organs";
 import { shouldUpdateSpecies, speciesForGenome } from "../life/species";
 import { clamp, mulberry32 } from "../random/rng";
 import {
@@ -32,6 +41,7 @@ import type {
   SimulationConfigPatch,
   SnapshotEnvironmentSummary,
   SnapshotLineageSummary,
+  SnapshotOrganSummary,
   SnapshotSpeciesSummary,
   SnapshotWorldSummary,
   TerrainType,
@@ -63,6 +73,13 @@ export class Simulation {
   lastEvent: EnvironmentEventRecord | null = null;
   knownLineages = new Set<number>();
   knownSpecies = new Set<number>();
+  organBudgetRemaining = 0;
+  organAttempts = 0;
+  organAccepted = 0;
+  organRefused = 0;
+  organBudgetSpent = 0;
+  organRefusalReasons = new Map<OrganRefusalReason, number>();
+  organAudit: OrganAuditRecord[] = [];
   agents: Agent[] = [];
 
   constructor(config?: SimulationConfigPatch) {
@@ -124,6 +141,13 @@ export class Simulation {
     this.lastEvent = null;
     this.knownLineages = new Set<number>();
     this.knownSpecies = new Set<number>();
+    this.organBudgetRemaining = this.config.organBudgetPerTick;
+    this.organAttempts = 0;
+    this.organAccepted = 0;
+    this.organRefused = 0;
+    this.organBudgetSpent = 0;
+    this.organRefusalReasons = new Map<OrganRefusalReason, number>();
+    this.organAudit = [];
     this.agents = [];
 
     for (let a = 0; a < this.config.initialAgents; a += 1) {
@@ -220,6 +244,7 @@ export class Simulation {
 
   tick(): void {
     this.tickCount += 1;
+    this.organBudgetRemaining = this.config.organBudgetPerTick;
     const update = updateWorld(this.world, this.config, this.tickCount, this.random, (x, y) => this.nearestOpenPoint(x, y));
     if (update.event) {
       this.eventCount += 1;
@@ -258,6 +283,107 @@ export class Simulation {
         this.handleAgentDeath(agent, "overflow");
       }
     }
+  }
+
+  attemptOrganAction(request: OrganActionRequest): OrganActionOutcome {
+    const outcome = this.resolveOrganAction(request);
+    this.recordOrganOutcome(outcome);
+    return outcome;
+  }
+
+  private resolveOrganAction(request: OrganActionRequest): OrganActionOutcome {
+    if (!isOrganCapabilityId(request.capabilityId)) {
+      return refuseOrganAction("unknown-capability", request);
+    }
+
+    const agent = this.agents.find((candidate) => candidate.id === request.agentId);
+    if (!agent || agent.energy <= 0) {
+      return refuseOrganAction("inactive-agent", request);
+    }
+
+    if (request.cost.organBudget > this.organBudgetRemaining) {
+      return refuseOrganAction("insufficient-budget", request);
+    }
+
+    if (request.cost.energy > agent.energy) {
+      return refuseOrganAction("insufficient-budget", request);
+    }
+
+    const targetCheck = this.validateOrganTarget(agent, request);
+    if (targetCheck) {
+      return refuseOrganAction(targetCheck, request);
+    }
+
+    return {
+      accepted: true,
+      capabilityId: request.capabilityId,
+      agentId: request.agentId,
+      intent: request.intent,
+      target: request.target,
+      cost: request.cost
+    };
+  }
+
+  private validateOrganTarget(agent: Agent, request: OrganActionRequest): OrganRefusalReason | null {
+    const { target } = request;
+    if (target.kind === "agent") {
+      return this.agents.some((candidate) => candidate.id === target.agentId) ? null : "invalid-target";
+    }
+
+    const radius = Math.max(0, Math.floor(target.radius));
+    if (radius !== target.radius || radius > agent.genome.senseRadius + 1) {
+      return "out-of-range";
+    }
+
+    const dx = Math.abs(target.point.x - agent.x);
+    const dy = Math.abs(target.point.y - agent.y);
+    const wrappedDx = Math.min(dx, this.width - dx);
+    const wrappedDy = Math.min(dy, this.height - dy);
+    if (wrappedDx + wrappedDy > agent.genome.senseRadius + radius + 1) {
+      return "out-of-range";
+    }
+
+    if (this.isBarrier(target.point.x, target.point.y)) {
+      return "blocked-terrain";
+    }
+
+    return null;
+  }
+
+  private recordOrganOutcome(outcome: OrganActionOutcome): void {
+    this.organAttempts += 1;
+    if (outcome.accepted) {
+      const agent = this.agents.find((candidate) => candidate.id === outcome.agentId);
+      if (agent) {
+        agent.energy -= outcome.cost.energy;
+      }
+      this.applyOrganEffect(outcome);
+      this.organAccepted += 1;
+      this.organBudgetRemaining -= outcome.cost.organBudget;
+      this.organBudgetSpent += outcome.cost.organBudget;
+    } else {
+      this.organRefused += 1;
+      this.organRefusalReasons.set(outcome.refusalReason, (this.organRefusalReasons.get(outcome.refusalReason) ?? 0) + 1);
+    }
+
+    this.organAudit.push(auditOrganOutcome(this.tickCount, outcome));
+    const limit = Math.max(0, Math.floor(this.config.organAuditLimit));
+    if (this.organAudit.length > limit) {
+      this.organAudit.splice(0, this.organAudit.length - limit);
+    }
+  }
+
+  private applyOrganEffect(outcome: Extract<OrganActionOutcome, { accepted: true }>): void {
+    if (outcome.capabilityId !== "trace-mark" || outcome.intent !== "mark-trace" || outcome.target.kind !== "cell") {
+      return;
+    }
+
+    const idx = this.index(outcome.target.point.x, outcome.target.point.y);
+    const radius = Math.max(0, Math.floor(outcome.target.radius));
+    const traceAmount = clamp(0.35 + outcome.cost.trace + radius * 0.12, 0, 2.2);
+    const pressureAmount = clamp(0.05 + outcome.cost.pressure + radius * 0.03, 0, 0.4);
+    this.traces[idx] = clamp(this.traces[idx] + traceAmount, 0, 12);
+    this.pressure[idx] = clamp(this.pressure[idx] + pressureAmount, 0, 4);
   }
 
   updateEnvironment(): void {
@@ -492,6 +618,7 @@ export class Simulation {
       world: this.snapshotWorld(metrics),
       lineages: this.snapshotLineages(),
       species: this.snapshotSpecies(),
+      organs: this.snapshotOrgans(),
       environment: this.snapshotEnvironment(options),
       agents: this.agents.map((agent) => ({
         id: agent.id,
@@ -694,6 +821,18 @@ export class Simulation {
     };
   }
 
+  snapshotOrgans(): SnapshotOrganSummary {
+    return {
+      attempts: this.organAttempts,
+      accepted: this.organAccepted,
+      refused: this.organRefused,
+      budgetSpent: roundSnapshotValue(this.organBudgetSpent),
+      budgetRemaining: roundSnapshotValue(this.organBudgetRemaining),
+      dominantRefusalReason: dominantRefusalReason(this.organRefusalReasons),
+      recentAudit: this.organAudit.map((record) => ({ ...record }))
+    };
+  }
+
   metrics(): Metrics {
     let totalEnergy = 0;
     let maxGeneration = 0;
@@ -759,7 +898,12 @@ export class Simulation {
       activeProcesses: this.world.processes.length,
       processCount,
       lastProcess: this.latestProcess(),
-      biomeCounts: biomeCountsFor(this.world.terrain)
+      biomeCounts: biomeCountsFor(this.world.terrain),
+      organAttempts: this.organAttempts,
+      organAccepted: this.organAccepted,
+      organRefused: this.organRefused,
+      organBudgetSpent: this.organBudgetSpent,
+      organDominantRefusalReason: dominantRefusalReason(this.organRefusalReasons)
     };
   }
 
@@ -831,6 +975,18 @@ function dominantIdAndCount(map: Map<number, number>): { id: number | null; coun
     }
   }
   return { id, count };
+}
+
+function dominantRefusalReason(map: Map<OrganRefusalReason, number>): OrganRefusalReason | null {
+  let reason: OrganRefusalReason | null = null;
+  let count = 0;
+  for (const [candidateReason, candidateCount] of map) {
+    if (candidateCount > count) {
+      reason = candidateReason;
+      count = candidateCount;
+    }
+  }
+  return reason;
 }
 
 export {

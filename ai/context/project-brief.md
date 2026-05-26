@@ -50,6 +50,7 @@ Phase 2.2：世界化环境与分化生态已完成验收，下一步进入 Phas
 - 2026-05-26：Phase 2.9 已完成：`Simulation.snapshot()` 输出可复现实验快照，页面可记录、复制和下载 JSON；用户已人工验证记录导出正确。
 - 2026-05-26：Phase 2.10 验收已完成：详见 `docs/05-phase-two-acceptance.md`。Phase 2 当前任务定义下通过，暂不追加环境事件细化等临时任务。
 - 2026-05-26：Phase 2.2 已完成：core 拆分为 config/random/world/life/sim，默认世界扩大到 `256 x 160`，新增 `WorldState`、terrain/biome、动态 fields、moisture-front 环境过程、行为 genome traits、species/clade 指标、snapshot schema v2、terrain base map + overlays 可视化，以及大世界性能基线优化；详见 `docs/06-phase-two-two-acceptance.md`。
+- 2026-05-26：Phase 3.1 已开始：新增 `docs/07-phase-three-organ-boundaries.md`，明确行为器官只能是本地模拟数据变换，不能接触真实网络、文件系统、shell、token、凭证、外部 API 或浏览器权限。
 
 ## 当前优先级
 

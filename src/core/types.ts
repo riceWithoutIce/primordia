@@ -1,3 +1,5 @@
+import type { OrganAuditRecord, OrganRefusalReason } from "./life/organs";
+
 export type RandomSource = () => number;
 
 export type AgentAction = "born" | "death" | "harvest" | "search" | "divide";
@@ -54,6 +56,8 @@ export interface SimulationConfig {
   pressureDiffusion: number;
   pressureGrowth: number;
   reproductionShare: number;
+  organBudgetPerTick: number;
+  organAuditLimit: number;
   seed: number;
 }
 
@@ -218,6 +222,11 @@ export interface Metrics {
   processCount: number;
   lastProcess: EnvironmentProcessRecord | null;
   biomeCounts: Record<TerrainType, number>;
+  organAttempts: number;
+  organAccepted: number;
+  organRefused: number;
+  organBudgetSpent: number;
+  organDominantRefusalReason: OrganRefusalReason | null;
 }
 
 export interface SnapshotAgent extends GridPoint {
@@ -290,6 +299,16 @@ export interface SnapshotWorldSummary {
   lastProcess: EnvironmentProcessRecord | null;
 }
 
+export interface SnapshotOrganSummary {
+  attempts: number;
+  accepted: number;
+  refused: number;
+  budgetSpent: number;
+  budgetRemaining: number;
+  dominantRefusalReason: OrganRefusalReason | null;
+  recentAudit: OrganAuditRecord[];
+}
+
 export interface ExperimentSnapshot {
   kind: "primordia.experiment-snapshot";
   schemaVersion: 2;
@@ -300,6 +319,7 @@ export interface ExperimentSnapshot {
   world: SnapshotWorldSummary;
   lineages: SnapshotLineageSummary[];
   species: SnapshotSpeciesSummary[];
+  organs: SnapshotOrganSummary;
   environment: SnapshotEnvironmentSummary;
   agents: SnapshotAgent[];
 }
