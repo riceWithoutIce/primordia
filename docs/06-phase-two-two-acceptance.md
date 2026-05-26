@@ -60,10 +60,16 @@ Manual validation still recommended:
 - moisture-front process rings and process metrics are observable after enough ticks
 - snapshot JSON exports with `schemaVersion: 2`
 
+Phase 2.2.14 acceptance check:
+
+- Project issues `#31` through `#43`, plus `#45` and `#46`, are implemented and marked Done in Project 5.
+- Remaining manual validation is observational rather than blocking for the current local simulation scope.
+- Phase 3 should begin with a fresh safety design pass before adding any simulated tool or organ system.
+
 ## Follow-Up Review Notes
 
 - Phase 2.2.16 introduced the first base-layer plus overlay-layer map controls. The default view is `terrain` with resource, agent, and process overlays enabled. Future review should focus on whether new layers such as species, rivers, wind, migration, and death heatmaps belong as optional overlays, not as additional top-level mode buttons.
 
 ## Result
 
-Phase 2.2 has an implemented first pass. The project now has a larger world model, explicit terrain/biome foundations, continuous environment processes, behavior differentiation, species/clade observability, and a core architecture better suited for Phase 3.
+Phase 2.2 is accepted for the current task definition. The project now has a larger world model, explicit terrain/biome foundations, continuous environment processes, behavior differentiation, species/clade observability, base-layer plus overlay map controls, and a core architecture better suited for Phase 3.

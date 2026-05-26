@@ -19,13 +19,14 @@
 
 ## 当前状态
 
-Phase 2 生态与谱系已经完成验收：
+Phase 2.2 世界化环境与分化生态已经完成验收：
 
 - TypeScript core 支持 `closed` / `flux` 环境、有限资源通量、代谢、移动、采集、留痕、繁殖、变异、死亡原因和死亡残余回收。
 - genome 变异被固定边界收束，高感知、高采集、低繁殖阈值等优势带有生态代价。
 - Phase 2 增加确定性资源地形、肥力驱动通量、局部枯竭与恢复、压力扩散、屏障、移动成本、谱系颜色、谱系命运指标、确定性环境事件和实验快照导出。
-- UI 展示 tick、seed、生命数量、谱系数量、总资源、总痕迹、总压力、环境事件、平均能量、最高世代、出生与死亡原因统计，并支持记录/复制/下载实验快照 JSON。
-- `npm run test` 覆盖 DOM-free core、deterministic replay、closed 灭绝、flux 有界输入、death recovery、genome bounds、population cap、Phase 2 ecology mechanics、experiment snapshots 和 UI 绑定。
+- Phase 2.2 将默认世界扩展到 `256 x 160`，引入 `WorldState`、静态 terrain、动态 fields、deterministic biome、moisture-front 环境过程、行为 genome traits、species/clade 指标和 snapshot schema v2。
+- UI 默认显示 terrain base map，并叠加 resource、agent 和 process overlays；也支持 biome、resource、pressure base layer 以及 pressure / lineage overlays。
+- `npm run test` 覆盖 DOM-free core、deterministic replay、closed 灭绝、flux 有界输入、death recovery、genome bounds、population cap、Phase 2/2.2 ecology mechanics、experiment snapshots 和 UI 绑定。
 - 公开静态页面：<https://ricewithoutice.github.io/primordia/>
 
 ## 当前骨架

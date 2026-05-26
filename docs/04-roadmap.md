@@ -60,7 +60,9 @@
 
 - Phase 2 已完成并验收：资源地形、肥力通量、局部枯竭/恢复、谱系颜色、谱系命运指标、压力扩散、屏障与移动成本、确定性环境事件、实验快照导出和 Phase 2 验收记录均已完成。
 - 验收记录见 [Phase 2 Acceptance Review](05-phase-two-acceptance.md)。
-- 下一步先进入 Phase 2.2：世界化环境与分化生态，再进入 Phase 3。Phase 2.2 用来加厚环境、行为和性能基础，避免 Phase 3 的工具系统建立在过于单薄的世界模型上。
+- Phase 2.2 已完成并验收：世界化环境、地形/生态位、连续环境过程、行为分化、species/clade 指标、base map + overlays 可视化和大世界性能基线均已完成。
+- 验收记录见 [Phase 2.2 Acceptance Review](06-phase-two-two-acceptance.md)。
+- 下一步进入 Phase 3：行为器官与工具边界。Phase 3 实施前需要重新审核工具白名单、审计、预算、拒绝机制和不可进化层。
 
 ## Phase 2.2：世界化环境与分化生态
 
@@ -83,6 +85,12 @@
 - 环境过程不是孤立点，而是能持续影响局部 resource、pressure、trace 或 moisture。
 - 行为差异和 species/clade 指标能在 UI 或 snapshot 中观察。
 - `npm run check` 和 `npm run build` 通过；必要时进行浏览器人工验证。
+
+当前状态：
+
+- Phase 2.2 已完成并验收。默认世界尺寸为 `256 x 160`，core 已拆分为 config/random/world/life/sim 模块，`ExperimentSnapshot` 为 `schemaVersion: 2`。
+- UI 默认使用 terrain base map，并叠加 resource、agent 和 process overlays；pressure 和 lineage 作为可选 overlays。
+- 大世界性能基线已记录：#43 优化后默认核心长跑 `step(1000)` 约为优化前的十分之一。
 
 ## Phase 3：行为器官与工具边界
 
