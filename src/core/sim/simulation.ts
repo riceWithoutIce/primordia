@@ -97,6 +97,7 @@ export class Simulation {
 
   set pressure(value: Float32Array) {
     this.world.fields.pressure = value;
+    this.world.fields.nextPressure = new Float32Array(value.length);
   }
 
   get moistureDelta(): Float32Array {

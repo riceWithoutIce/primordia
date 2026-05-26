@@ -8,6 +8,7 @@ export function createWorld(config: SimulationConfig): WorldState {
   const resource = new Float32Array(config.width * config.height);
   const trace = new Float32Array(config.width * config.height);
   const pressure = new Float32Array(config.width * config.height);
+  const nextPressure = new Float32Array(config.width * config.height);
   const moistureDelta = new Float32Array(config.width * config.height);
 
   for (let i = 0; i < resource.length; i += 1) {
@@ -28,6 +29,7 @@ export function createWorld(config: SimulationConfig): WorldState {
       resource,
       trace,
       pressure,
+      nextPressure,
       moistureDelta
     },
     processes: [],

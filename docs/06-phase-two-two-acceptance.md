@@ -45,9 +45,17 @@ npm run check
 npm run build
 ```
 
+Large-world performance baseline for issue #43:
+
+- Environment: Windows local Node `v24.14.1`, default `256 x 160`, seed `20260526`, `96` initial agents, `720` max agents.
+- Before #43 optimization, the core long-run benchmark measured `step(1000)` after warmup at about `21192ms` once the run reached around `201` agents.
+- #43 replaced per-cell terrain noise recomputation during resource recovery with cached terrain fertility and reused the pressure diffusion buffer instead of allocating a new `Float32Array` every diffusion pass.
+- After #43 optimization, the same benchmark measured `step(1000)` after warmup at about `2117ms`, with matching tick, agent, and process counts.
+- Snapshot and render-loop timings remain secondary risks for very dense export or future high-frequency overlays, but the default simulation tick path is now comfortably below the earlier large-world risk level.
+
 Manual validation still recommended:
 
-- resource, terrain, biome, pressure, and lineage view buttons switch visibly
+- base map and overlay controls switch visibly
 - default `256 x 160` run remains responsive in the browser
 - moisture-front process rings and process metrics are observable after enough ticks
 - snapshot JSON exports with `schemaVersion: 2`

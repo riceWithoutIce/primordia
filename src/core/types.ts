@@ -120,6 +120,7 @@ export interface DynamicFields {
   resource: Float32Array;
   trace: Float32Array;
   pressure: Float32Array;
+  nextPressure: Float32Array;
   moistureDelta: Float32Array;
 }
 

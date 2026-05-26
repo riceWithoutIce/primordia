@@ -1,6 +1,5 @@
 import { clamp } from "../random/rng";
 import { maybeSpawnProcess, maybeTriggerEnvironmentalEvent, updateProcesses } from "./processes";
-import { resourceFertilityAt } from "./terrain";
 import { worldIndex } from "./world";
 import type { EnvironmentEventRecord, EnvironmentProcessRecord, RandomSource, SimulationConfig, WorldState } from "../types";
 
@@ -27,9 +26,7 @@ export function updateEnvironmentFields(world: WorldState, config: SimulationCon
   const cap = config.resourceCap;
   for (let i = 0; i < world.size; i += 1) {
     if (config.environmentMode === "flux") {
-      const x = i % world.width;
-      const y = Math.floor(i / world.width);
-      const fertility = resourceFertilityAt(x, y, config);
+      const fertility = terrainResourceFertility(world.terrain.fertilityBase[i], world.terrain.terrainType[i], config);
       const terrainFertility = world.terrain.fertilityBase[i];
       const moisture = clamp(world.terrain.moistureBase[i] + world.fields.moistureDelta[i] * 0.35, 0, 1.4);
       const terrainPenalty = world.terrain.terrainType[i] === "ocean" ? 0.25 : 1;
@@ -64,18 +61,28 @@ export function diffusePressure(world: WorldState, config: SimulationConfig): vo
     return;
   }
 
-  const nextPressure = new Float32Array(world.size);
+  const nextPressure = world.fields.nextPressure;
+  const pressure = world.fields.pressure;
   for (let y = 0; y < world.height; y += 1) {
     for (let x = 0; x < world.width; x += 1) {
       const idx = worldIndex(world, x, y);
       const neighborAverage =
-        (world.fields.pressure[worldIndex(world, x + 1, y)] +
-          world.fields.pressure[worldIndex(world, x - 1, y)] +
-          world.fields.pressure[worldIndex(world, x, y + 1)] +
-          world.fields.pressure[worldIndex(world, x, y - 1)]) /
+        (pressure[worldIndex(world, x + 1, y)] +
+          pressure[worldIndex(world, x - 1, y)] +
+          pressure[worldIndex(world, x, y + 1)] +
+          pressure[worldIndex(world, x, y - 1)]) /
         4;
-      nextPressure[idx] = clamp(world.fields.pressure[idx] * (1 - diffusion) + neighborAverage * diffusion, 0, 4);
+      nextPressure[idx] = clamp(pressure[idx] * (1 - diffusion) + neighborAverage * diffusion, 0, 4);
     }
   }
   world.fields.pressure = nextPressure;
+  world.fields.nextPressure = pressure;
+}
+
+function terrainResourceFertility(fertilityBase: number, terrainType: string, config: SimulationConfig): number {
+  if (config.resourceCap <= 0) {
+    return 0;
+  }
+  const terrainFactor = terrainType === "ocean" ? 0.38 : 0.95;
+  return clamp((fertilityBase * terrainFactor) / 0.9, 0, 1);
 }
