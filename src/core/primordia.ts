@@ -287,7 +287,7 @@ export function mutateGenome(parent: Genome, random: RandomSource): Genome {
 
 function harvestPressure(genome: Genome, harvested: number): number {
   const harvestLoad = Math.max(0, genome.harvestRate - 1.4);
-  return harvested * (0.006 + harvestLoad * 0.006);
+  return harvested * (0.01 + harvestLoad * 0.008);
 }
 
 function reproductionEfficiency(genome: Genome): number {
@@ -457,9 +457,10 @@ export class Simulation {
         const x = i % this.width;
         const y = Math.floor(i / this.width);
         const fertility = resourceFertilityAt(x, y, this.config);
-        const growthChance = this.config.resourceGrowth * (0.25 + fertility * 1.15);
+        const recoveryFactor = 1 / (1 + this.pressure[i] * 0.55);
+        const growthChance = this.config.resourceGrowth * (0.25 + fertility * 1.15) * recoveryFactor;
         if (this.random() < growthChance) {
-          const growthAmount = (0.15 + fertility * 0.85) * this.random() * 0.8;
+          const growthAmount = (0.15 + fertility * 0.85) * recoveryFactor * this.random() * 0.8;
           this.resources[i] = clamp(this.resources[i] + growthAmount, 0, cap);
         }
       }
@@ -550,7 +551,8 @@ export class Simulation {
   recoverResidue(agent: Agent, reason: DeathReason): void {
     const idx = this.index(agent.x, agent.y);
     const remainingEnergy = Math.max(0, agent.energy);
-    const resourceResidue = remainingEnergy * 0.35;
+    const pressureLoad = clamp(this.pressure[idx] / 4, 0, 1);
+    const resourceResidue = remainingEnergy * 0.35 * (1 - pressureLoad * 0.45);
     const traceResidue = 1 + Math.min(agent.age * 0.02, 1.5);
     const pressureResidue = reason === "pressure" ? 0.8 : reason === "overflow" ? 0.45 : 0.25;
 

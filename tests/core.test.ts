@@ -191,6 +191,35 @@ describe("typed simulation core", () => {
     expect(highAverage).toBeGreaterThan(lowAverage * 1.5);
   });
 
+  it("slows resource recovery in high-pressure cells", () => {
+    const calm = new Simulation({
+      environmentMode: "flux",
+      width: 8,
+      height: 8,
+      initialAgents: 0,
+      resourceGrowth: 1,
+      resourceCap: 9,
+      seed: 20260533
+    });
+    const stressed = new Simulation({
+      environmentMode: "flux",
+      width: 8,
+      height: 8,
+      initialAgents: 0,
+      resourceGrowth: 1,
+      resourceCap: 9,
+      seed: 20260533
+    });
+    calm.resources.fill(0);
+    stressed.resources.fill(0);
+    stressed.pressure.fill(4);
+
+    calm.step(8);
+    stressed.step(8);
+
+    expect(calm.metrics().totalResource).toBeGreaterThan(stressed.metrics().totalResource * 1.8);
+  });
+
   it("makes neighboring terrain cells more similar than distant cells", () => {
     const sim = new Simulation({
       width: 48,
@@ -550,6 +579,36 @@ describe("typed simulation core", () => {
 
     expect(earlyChild.energy).toBeLessThan(lateChild.energy);
     expect(early.pressure[early.index(1, 1)]).toBeGreaterThan(pressureBeforeReproduction);
+  });
+
+  it("recovers less death residue as resource in high-pressure cells", () => {
+    const calm = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      resourceCap: 10,
+      seed: 20260534
+    });
+    const stressed = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      resourceCap: 10,
+      seed: 20260534
+    });
+    const genome = testGenome();
+    calm.resources.fill(0);
+    stressed.resources.fill(0);
+    calm.pressure[calm.index(1, 1)] = 0;
+    stressed.pressure[stressed.index(1, 1)] = 4;
+    const calmAgent = calm.spawnAgent(1, 1, genome, 8);
+    const stressedAgent = stressed.spawnAgent(1, 1, genome, 8);
+    calm.recoverResidue(calmAgent, "starvation");
+    stressed.recoverResidue(stressedAgent, "starvation");
+
+    expect(calm.cellAt(1, 1).resource).toBeGreaterThan(stressed.cellAt(1, 1).resource);
   });
 
   it("records starvation deaths and returns residue to the environment", () => {
