@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>未形 / primordia</title>
-    <script type="module" crossorigin src="/primordia/assets/index-DIIcl9oq.js"></script>
-    <link rel="stylesheet" crossorigin href="/primordia/assets/index-H_diO9pV.css">
+    <script type="module" crossorigin src="/primordia/assets/index-vXcvLusw.js"></script>
+    <link rel="stylesheet" crossorigin href="/primordia/assets/index-7LCBl7TA.css">
   </head>
   <body>
     <main class="app-shell">
@@ -38,6 +38,28 @@
           <input id="speed" type="range" min="0" max="8" value="6">
         </label>
 
+        <div class="map-controls" aria-label="map controls">
+          <fieldset class="layer-group">
+            <legend>Base</legend>
+            <div class="layer-options">
+              <button class="base-layer active" id="base-terrain" type="button" data-base-layer="terrain">terrain</button>
+              <button class="base-layer" id="base-biome" type="button" data-base-layer="biome">biome</button>
+              <button class="base-layer" id="base-resource" type="button" data-base-layer="resource">resource</button>
+              <button class="base-layer" id="base-pressure" type="button" data-base-layer="pressure">pressure</button>
+            </div>
+          </fieldset>
+          <fieldset class="layer-group">
+            <legend>Overlays</legend>
+            <div class="layer-options">
+              <label class="overlay-toggle"><input id="overlay-resources" type="checkbox" data-overlay="resources" checked> resources</label>
+              <label class="overlay-toggle"><input id="overlay-agents" type="checkbox" data-overlay="agents" checked> agents</label>
+              <label class="overlay-toggle"><input id="overlay-processes" type="checkbox" data-overlay="processes" checked> processes</label>
+              <label class="overlay-toggle"><input id="overlay-pressure" type="checkbox" data-overlay="pressure"> pressure</label>
+              <label class="overlay-toggle"><input id="overlay-lineages" type="checkbox" data-overlay="lineages"> lineages</label>
+            </div>
+          </fieldset>
+        </div>
+
         <dl class="metrics">
           <div><dt>tick</dt><dd id="m-tick">0</dd></div>
           <div><dt>seed</dt><dd id="m-seed">0</dd></div>
@@ -52,6 +74,11 @@
           <div><dt>总压力</dt><dd id="m-pressure">0</dd></div>
           <div><dt>事件</dt><dd id="m-events">0</dd></div>
           <div><dt>最近事件</dt><dd id="m-last-event">-</dd></div>
+          <div><dt>环境过程</dt><dd id="m-processes">0</dd></div>
+          <div><dt>最近过程</dt><dd id="m-last-process">-</dd></div>
+          <div><dt>物种</dt><dd id="m-species">0</dd></div>
+          <div><dt>优势物种</dt><dd id="m-dominant-species">-</dd></div>
+          <div><dt>湿度脉冲</dt><dd id="m-moisture">0</dd></div>
           <div><dt>平均能量</dt><dd id="m-energy">0</dd></div>
           <div><dt>最高世代</dt><dd id="m-generation">0</dd></div>
           <div><dt>出生</dt><dd id="m-births">0</dd></div>
