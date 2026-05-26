@@ -227,6 +227,102 @@ describe("typed simulation core", () => {
     expect(calm.metrics().totalResource).toBeGreaterThan(stressed.metrics().totalResource * 1.8);
   });
 
+  it("triggers deterministic environmental events on the configured interval", () => {
+    const config: SimulationConfigPatch = {
+      environmentMode: "flux",
+      width: 16,
+      height: 12,
+      initialAgents: 0,
+      resourceGrowth: 0,
+      eventInterval: 3,
+      eventRadius: 3,
+      eventIntensity: 1.4,
+      seed: 20260540
+    };
+    const first = new Simulation(config);
+    const replay = new Simulation(config);
+
+    first.step(6);
+    replay.step(6);
+
+    expect(first.metrics().eventCount).toBe(2);
+    expect(replay.metrics().lastEvent).toEqual(first.metrics().lastEvent);
+    expect(Array.from(replay.resources)).toEqual(Array.from(first.resources));
+    expect(Array.from(replay.pressure)).toEqual(Array.from(first.pressure));
+  });
+
+  it("lets bloom events add bounded resource without consuming random simulation state", () => {
+    const eventful = new Simulation({
+      environmentMode: "flux",
+      width: 12,
+      height: 10,
+      initialAgents: 0,
+      resourceGrowth: 0,
+      resourceCap: 9,
+      eventInterval: 1,
+      eventRadius: 3,
+      eventIntensity: 2,
+      seed: 1
+    });
+    const quiet = new Simulation({
+      ...eventful.config,
+      eventInterval: 0
+    });
+    eventful.resources.fill(0);
+    quiet.resources.fill(0);
+    eventful.pressure.fill(0);
+    quiet.pressure.fill(0);
+
+    eventful.tick();
+    quiet.tick();
+    const event = eventful.metrics().lastEvent;
+
+    expect(event?.kind).toBe("bloom");
+    expect(eventful.metrics().eventCount).toBe(1);
+    expect(eventful.metrics().totalResource).toBeGreaterThan(quiet.metrics().totalResource);
+    expect(Math.max(...Array.from(eventful.resources))).toBeLessThanOrEqual(eventful.config.resourceCap);
+  });
+
+  it("lets pressure events disturb local pressure fields", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 12,
+      height: 10,
+      initialAgents: 0,
+      resourceGrowth: 0,
+      eventInterval: 1,
+      eventRadius: 3,
+      eventIntensity: 2,
+      seed: 3
+    });
+    sim.pressure.fill(0);
+    const before = sim.metrics().totalPressure;
+
+    sim.tick();
+    const metrics = sim.metrics();
+
+    expect(metrics.lastEvent?.kind).toBe("pressure");
+    expect(metrics.totalPressure).toBeGreaterThan(before);
+    expect(metrics.totalTrace).toBeGreaterThan(0);
+  });
+
+  it("can disable environmental events", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 12,
+      height: 10,
+      initialAgents: 0,
+      resourceGrowth: 0,
+      eventInterval: 0,
+      seed: 20260541
+    });
+
+    sim.step(12);
+
+    expect(sim.metrics().eventCount).toBe(0);
+    expect(sim.metrics().lastEvent).toBeNull();
+  });
+
   it("makes neighboring terrain cells more similar than distant cells", () => {
     const sim = new Simulation({
       width: 48,

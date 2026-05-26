@@ -1,4 +1,4 @@
-import { Simulation, type Agent } from "../core/primordia";
+import { Simulation, type Agent, type EnvironmentEventRecord } from "../core/primordia";
 import { lineageFillStyle } from "./lineageColor";
 import "./styles.css";
 
@@ -27,6 +27,8 @@ const metrics = {
   totalResource: getElement<HTMLElement>("m-resource"),
   totalTrace: getElement<HTMLElement>("m-trace"),
   totalPressure: getElement<HTMLElement>("m-pressure"),
+  events: getElement<HTMLElement>("m-events"),
+  lastEvent: getElement<HTMLElement>("m-last-event"),
   energy: getElement<HTMLElement>("m-energy"),
   generation: getElement<HTMLElement>("m-generation"),
   births: getElement<HTMLElement>("m-births"),
@@ -127,7 +129,9 @@ function render(): void {
     drawAgent(agent, cellW, cellH);
   }
 
-  updateMetrics();
+  const m = sim.metrics();
+  drawEventPulse(m.lastEvent, cellW, cellH);
+  updateMetrics(m);
 }
 
 function drawAgent(agent: Agent, cellW: number, cellH: number): void {
@@ -149,8 +153,29 @@ function drawAgent(agent: Agent, cellW: number, cellH: number): void {
   }
 }
 
-function updateMetrics(): void {
-  const m = sim.metrics();
+function drawEventPulse(event: EnvironmentEventRecord | null, cellW: number, cellH: number): void {
+  if (!event) {
+    return;
+  }
+
+  const age = sim.tickCount - event.tick;
+  if (age < 0 || age > 36) {
+    return;
+  }
+
+  const x = (event.x + 0.5) * cellW;
+  const y = (event.y + 0.5) * cellH;
+  const radius = Math.max(cellW, cellH) * (event.radius + age * 0.08);
+  const alpha = Math.max(0, 1 - age / 36);
+
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = event.kind === "bloom" ? `rgba(194, 242, 116, ${alpha * 0.65})` : `rgba(236, 106, 94, ${alpha * 0.68})`;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function updateMetrics(m = sim.metrics()): void {
   metrics.tick.textContent = String(m.tick);
   metrics.seed.textContent = String(m.seed);
   metrics.agents.textContent = String(m.agents);
@@ -162,6 +187,8 @@ function updateMetrics(): void {
   metrics.totalResource.textContent = formatTotal(m.totalResource);
   metrics.totalTrace.textContent = formatTotal(m.totalTrace);
   metrics.totalPressure.textContent = formatTotal(m.totalPressure);
+  metrics.events.textContent = String(m.eventCount);
+  metrics.lastEvent.textContent = formatEvent(m.lastEvent);
   metrics.energy.textContent = m.averageEnergy.toFixed(1);
   metrics.generation.textContent = String(m.maxGeneration);
   metrics.births.textContent = String(m.births);
@@ -177,6 +204,14 @@ function formatTotal(value: number): string {
 
 function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+function formatEvent(event: EnvironmentEventRecord | null): string {
+  if (!event) {
+    return "-";
+  }
+
+  return `${event.kind} ${event.x},${event.y}`;
 }
 
 function tickRate(): number {

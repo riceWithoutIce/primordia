@@ -6,6 +6,8 @@ export type DeathReason = "starvation" | "pressure" | "overflow";
 
 export type EnvironmentMode = "closed" | "flux";
 
+export type EnvironmentEventKind = "bloom" | "pressure";
+
 export interface GridPoint {
   x: number;
   y: number;
@@ -25,6 +27,9 @@ export interface SimulationConfig {
   initialEnergy: number;
   resourceGrowth: number;
   resourceCap: number;
+  eventInterval: number;
+  eventRadius: number;
+  eventIntensity: number;
   barrierThreshold: number;
   terrainCostScale: number;
   traceDecay: number;
@@ -60,6 +65,14 @@ export interface EnvironmentCell {
   barrier: boolean;
   trace: number;
   pressure: number;
+}
+
+export interface EnvironmentEventRecord extends GridPoint {
+  tick: number;
+  kind: EnvironmentEventKind;
+  radius: number;
+  intensity: number;
+  affectedCells: number;
 }
 
 export interface Agent extends GridPoint {
@@ -102,6 +115,8 @@ export interface Metrics {
   totalResource: number;
   totalTrace: number;
   totalPressure: number;
+  eventCount: number;
+  lastEvent: EnvironmentEventRecord | null;
 }
 
 export const DEFAULTS: SimulationConfig = {
@@ -113,6 +128,9 @@ export const DEFAULTS: SimulationConfig = {
   initialEnergy: 42,
   resourceGrowth: 0.08,
   resourceCap: 9,
+  eventInterval: 160,
+  eventRadius: 5,
+  eventIntensity: 1.6,
   barrierThreshold: 0.78,
   terrainCostScale: 0.55,
   traceDecay: 0.965,
@@ -343,6 +361,8 @@ export class Simulation {
   births = 0;
   deaths = 0;
   deathReasons: DeathStats = createDeathStats();
+  eventCount = 0;
+  lastEvent: EnvironmentEventRecord | null = null;
   knownLineages = new Set<number>();
   resources: Float32Array;
   traces: Float32Array;
@@ -379,6 +399,8 @@ export class Simulation {
     this.births = 0;
     this.deaths = 0;
     this.deathReasons = createDeathStats();
+    this.eventCount = 0;
+    this.lastEvent = null;
     this.knownLineages = new Set<number>();
     this.agents = [];
 
@@ -487,6 +509,7 @@ export class Simulation {
   tick(): void {
     this.tickCount += 1;
     this.updateEnvironment();
+    this.maybeTriggerEnvironmentalEvent();
 
     const newborns: Agent[] = [];
     for (const agent of this.agents) {
@@ -543,6 +566,78 @@ export class Simulation {
       );
     }
     this.diffusePressure();
+  }
+
+  maybeTriggerEnvironmentalEvent(): void {
+    if (this.config.environmentMode !== "flux") {
+      return;
+    }
+
+    const interval = Math.floor(this.config.eventInterval);
+    if (interval <= 0 || this.tickCount % interval !== 0) {
+      return;
+    }
+
+    const event = this.triggerEnvironmentalEvent();
+    if (event) {
+      this.eventCount += 1;
+      this.lastEvent = event;
+    }
+  }
+
+  triggerEnvironmentalEvent(): EnvironmentEventRecord | null {
+    const radius = Math.max(0, Math.round(this.config.eventRadius));
+    const intensity = Math.max(0, this.config.eventIntensity);
+    if (radius <= 0 || intensity <= 0 || this.size <= 0) {
+      return null;
+    }
+
+    const xRoll = hash2d(this.tickCount, 17, this.config.seed ^ 0x51ed270f);
+    const yRoll = hash2d(this.tickCount, 29, this.config.seed ^ 0x9e3779b9);
+    const kindRoll = hash2d(this.tickCount, 43, this.config.seed ^ 0x85ebca6b);
+    const originX = Math.floor(xRoll * this.width) % this.width;
+    const originY = Math.floor(yRoll * this.height) % this.height;
+    const center = this.nearestOpenPoint(originX, originY);
+    const kind: EnvironmentEventKind = kindRoll < 0.58 ? "bloom" : "pressure";
+    let affectedCells = 0;
+
+    for (let dy = -radius; dy <= radius; dy += 1) {
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        const distance = Math.abs(dx) + Math.abs(dy);
+        if (distance > radius) {
+          continue;
+        }
+
+        const x = center.x + dx;
+        const y = center.y + dy;
+        if (this.isBarrier(x, y)) {
+          continue;
+        }
+
+        const idx = this.index(x, y);
+        const falloff = 1 - distance / (radius + 1);
+        if (kind === "bloom") {
+          const fertility = resourceFertilityAt(x, y, this.config);
+          const amount = intensity * falloff * (0.55 + fertility * 0.75);
+          this.resources[idx] = clamp(this.resources[idx] + amount, 0, this.config.resourceCap);
+          this.traces[idx] = clamp(this.traces[idx] + falloff * 0.12, 0, 12);
+        } else {
+          this.pressure[idx] = clamp(this.pressure[idx] + intensity * falloff * 0.55, 0, 4);
+          this.traces[idx] = clamp(this.traces[idx] + falloff * 0.28, 0, 12);
+        }
+        affectedCells += 1;
+      }
+    }
+
+    return {
+      tick: this.tickCount,
+      kind,
+      x: center.x,
+      y: center.y,
+      radius,
+      intensity,
+      affectedCells
+    };
   }
 
   diffusePressure(): void {
@@ -778,7 +873,9 @@ export class Simulation {
       deathReasons: { ...this.deathReasons },
       totalResource,
       totalTrace,
-      totalPressure
+      totalPressure,
+      eventCount: this.eventCount,
+      lastEvent: this.lastEvent ? { ...this.lastEvent } : null
     };
   }
 }

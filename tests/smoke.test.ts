@@ -42,6 +42,8 @@ describe("primordia simulation smoke", () => {
       "m-resource",
       "m-trace",
       "m-pressure",
+      "m-events",
+      "m-last-event",
       "m-energy",
       "m-generation",
       "m-births",
