@@ -25,6 +25,8 @@ export interface SimulationConfig {
   initialEnergy: number;
   resourceGrowth: number;
   resourceCap: number;
+  barrierThreshold: number;
+  terrainCostScale: number;
   traceDecay: number;
   pressureDecay: number;
   pressureDiffusion: number;
@@ -54,6 +56,8 @@ export interface GenomeRange {
 export interface EnvironmentCell {
   resource: number;
   fertility: number;
+  movementCost: number;
+  barrier: boolean;
   trace: number;
   pressure: number;
 }
@@ -109,6 +113,8 @@ export const DEFAULTS: SimulationConfig = {
   initialEnergy: 42,
   resourceGrowth: 0.08,
   resourceCap: 9,
+  barrierThreshold: 0.78,
+  terrainCostScale: 0.55,
   traceDecay: 0.965,
   pressureDecay: 0.992,
   pressureDiffusion: 0.06,
@@ -212,6 +218,23 @@ export function resourceFertilityAt(x: number, y: number, config: SimulationConf
   }
 
   return clamp(resourceTerrainAt(x, y, config) / (config.resourceCap * 0.9), 0, 1);
+}
+
+export function movementTerrainAt(x: number, y: number, config: SimulationConfig): number {
+  const broadScale = Math.max(7, Math.min(config.width, config.height) * 0.22);
+  const fineScale = Math.max(3, Math.min(config.width, config.height) * 0.08);
+  const broad = valueNoise2d(x, y, config.seed ^ 0x165667b1, broadScale);
+  const fine = valueNoise2d(x, y, config.seed ^ 0xd3a2646c, fineScale);
+  return clamp(broad * 0.72 + fine * 0.28, 0, 1);
+}
+
+export function movementCostAt(x: number, y: number, config: SimulationConfig): number {
+  return 1 + movementTerrainAt(x, y, config) * Math.max(0, config.terrainCostScale);
+}
+
+export function isBarrierAt(x: number, y: number, config: SimulationConfig): boolean {
+  const threshold = clamp(config.barrierThreshold, 0, 1.01);
+  return threshold <= 1 && movementTerrainAt(x, y, config) >= threshold;
 }
 
 export function createGenome(random: RandomSource): Genome {
@@ -393,6 +416,8 @@ export class Simulation {
     return {
       resource: this.resources[idx],
       fertility: resourceFertilityAt(idx % this.width, Math.floor(idx / this.width), this.config),
+      movementCost: movementCostAt(idx % this.width, Math.floor(idx / this.width), this.config),
+      barrier: isBarrierAt(idx % this.width, Math.floor(idx / this.width), this.config),
       trace: this.traces[idx],
       pressure: this.pressure[idx]
     };
@@ -402,13 +427,14 @@ export class Simulation {
     const resolvedLineageId = lineageId ?? this.nextLineageId++;
     this.nextLineageId = Math.max(this.nextLineageId, resolvedLineageId + 1);
     this.knownLineages.add(resolvedLineageId);
+    const spawnPoint = this.nearestOpenPoint(x, y);
 
     const boundedGenome = constrainGenome(genome);
     const agent: Agent = {
       id: this.nextAgentId,
       lineageId: resolvedLineageId,
-      x: (x + this.width) % this.width,
-      y: (y + this.height) % this.height,
+      x: spawnPoint.x,
+      y: spawnPoint.y,
       energy,
       age: 0,
       generation,
@@ -419,6 +445,36 @@ export class Simulation {
     this.agents.push(agent);
     this.births += 1;
     return agent;
+  }
+
+  nearestOpenPoint(x: number, y: number): GridPoint {
+    const originX = (x + this.width) % this.width;
+    const originY = (y + this.height) % this.height;
+    if (!this.isBarrier(originX, originY)) {
+      return { x: originX, y: originY };
+    }
+
+    const maxRadius = Math.max(this.width, this.height);
+    for (let radius = 1; radius <= maxRadius; radius += 1) {
+      for (let dy = -radius; dy <= radius; dy += 1) {
+        for (let dx = -radius; dx <= radius; dx += 1) {
+          if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) {
+            continue;
+          }
+          const candidateX = (originX + dx + this.width) % this.width;
+          const candidateY = (originY + dy + this.height) % this.height;
+          if (!this.isBarrier(candidateX, candidateY)) {
+            return { x: candidateX, y: candidateY };
+          }
+        }
+      }
+    }
+
+    return { x: originX, y: originY };
+  }
+
+  isBarrier(x: number, y: number): boolean {
+    return isBarrierAt(x, y, this.config);
   }
 
   step(iterations = 1): void {
@@ -545,9 +601,16 @@ export class Simulation {
   }
 
   moveAgent(agent: Agent, move: MoveVector): void {
-    agent.x = (agent.x + move.dx + this.width) % this.width;
-    agent.y = (agent.y + move.dy + this.height) % this.height;
-    agent.energy -= agent.genome.moveCost * (Math.abs(move.dx) + Math.abs(move.dy));
+    const targetX = (agent.x + move.dx + this.width) % this.width;
+    const targetY = (agent.y + move.dy + this.height) % this.height;
+    if (this.isBarrier(targetX, targetY)) {
+      return;
+    }
+
+    agent.x = targetX;
+    agent.y = targetY;
+    const distance = Math.abs(move.dx) + Math.abs(move.dy);
+    agent.energy -= agent.genome.moveCost * distance * movementCostAt(targetX, targetY, this.config);
   }
 
   harvestAgent(agent: Agent): number {
@@ -604,6 +667,11 @@ export class Simulation {
     let bestScore = -Infinity;
 
     for (const move of MOVE_CANDIDATES) {
+      const targetX = agent.x + move.dx;
+      const targetY = agent.y + move.dy;
+      if (this.isBarrier(targetX, targetY)) {
+        continue;
+      }
       const score = this.scoreArea(agent.x + move.dx, agent.y + move.dy, agent.genome) + this.random() * 0.25;
       if (score > bestScore) {
         bestScore = score;
@@ -620,9 +688,14 @@ export class Simulation {
       for (let x = -radius; x <= radius; x += 1) {
         const distance = Math.abs(x) + Math.abs(y) + 1;
         const idx = this.index(cx + x, cy + y);
+        if (this.isBarrier(cx + x, cy + y)) {
+          score -= 12 / distance;
+          continue;
+        }
         score += (this.resources[idx] * genome.resourceAffinity) / distance;
         score += (this.traces[idx] * genome.traceAffinity) / distance;
         score -= this.pressure[idx] * 0.35;
+        score -= (movementCostAt(cx + x, cy + y, this.config) - 1) * 0.55;
       }
     }
     return score;
@@ -646,8 +719,7 @@ export class Simulation {
     parent.lastAction = "divide";
     return {
       id: this.nextAgentId++,
-      x: (parent.x + offsetX + this.width) % this.width,
-      y: (parent.y + offsetY + this.height) % this.height,
+      ...this.nearestOpenPoint(parent.x + offsetX, parent.y + offsetY),
       lineageId: parent.lineageId,
       energy: childEnergy,
       age: 0,

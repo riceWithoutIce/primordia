@@ -5,6 +5,9 @@ import {
   Simulation,
   constrainGenome,
   mutateGenome,
+  isBarrierAt,
+  movementCostAt,
+  movementTerrainAt,
   resourceFertilityAt,
   resourceTerrainAt,
   type EnvironmentCell,
@@ -82,8 +85,12 @@ describe("typed simulation core", () => {
 
     origin.resource = 999;
     origin.fertility = 999;
+    origin.movementCost = 999;
+    origin.barrier = !origin.barrier;
     expect(sim.cellAt(0, 0).resource).not.toBe(999);
     expect(sim.cellAt(0, 0).fertility).not.toBe(999);
+    expect(sim.cellAt(0, 0).movementCost).not.toBe(999);
+    expect(sim.cellAt(0, 0).barrier).not.toBe(origin.barrier);
     expect(sim.environmentAt(sim.size).resource).toBe(sim.cellAt(0, 0).resource);
   });
 
@@ -242,12 +249,126 @@ describe("typed simulation core", () => {
     expect(neighborDelta / samples).toBeLessThan(farDelta / samples);
   });
 
+  it("exposes deterministic movement terrain and barriers", () => {
+    const sim = new Simulation({
+      width: 48,
+      height: 32,
+      initialAgents: 0,
+      barrierThreshold: 0.72,
+      terrainCostScale: 0.8,
+      seed: 20260538
+    });
+    const replay = new Simulation({
+      width: 48,
+      height: 32,
+      initialAgents: 0,
+      barrierThreshold: 0.72,
+      terrainCostScale: 0.8,
+      seed: 20260538
+    });
+    const other = new Simulation({
+      width: 48,
+      height: 32,
+      initialAgents: 0,
+      barrierThreshold: 0.72,
+      terrainCostScale: 0.8,
+      seed: 20260539
+    });
+    const movement = movementTerrainAt(6, 9, sim.config);
+    const cost = movementCostAt(6, 9, sim.config);
+    const barriers = Array.from({ length: sim.size }, (_, index) =>
+      isBarrierAt(index % sim.width, Math.floor(index / sim.width), sim.config)
+    );
+    const otherBarriers = Array.from({ length: other.size }, (_, index) =>
+      isBarrierAt(index % other.width, Math.floor(index / other.width), other.config)
+    );
+
+    expect(movement).toBeCloseTo(movementTerrainAt(6, 9, replay.config));
+    expect(cost).toBeGreaterThanOrEqual(1);
+    expect(cost).toBeCloseTo(1 + movement * sim.config.terrainCostScale);
+    expect(barriers.some(Boolean)).toBe(true);
+    expect(barriers).not.toEqual(otherBarriers);
+    expect(sim.cellAt(6, 9).movementCost).toBeCloseTo(cost);
+    expect(sim.cellAt(6, 9).barrier).toBe(isBarrierAt(6, 9, sim.config));
+  });
+
+  it("keeps agents out of barrier cells and relocates barrier spawns", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 24,
+      height: 18,
+      initialAgents: 0,
+      barrierThreshold: 0.65,
+      seed: 20260540
+    });
+    const barrierIndex = Array.from({ length: sim.size }, (_, index) => index).find((index) =>
+      sim.isBarrier(index % sim.width, Math.floor(index / sim.width))
+    );
+    expect(barrierIndex).toBeDefined();
+    const barrierX = barrierIndex! % sim.width;
+    const barrierY = Math.floor(barrierIndex! / sim.width);
+    const agent = sim.spawnAgent(barrierX, barrierY, testGenome({ moveCost: 0.2 }), 10);
+
+    expect(sim.isBarrier(barrierX, barrierY)).toBe(true);
+    expect(sim.isBarrier(agent.x, agent.y)).toBe(false);
+
+    const open = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      barrierThreshold: 1.01,
+      seed: 20260541
+    });
+    const walker = open.spawnAgent(0, 0, testGenome({ moveCost: 0.2 }), 10);
+    open.config.barrierThreshold = 0;
+    const before = { x: walker.x, y: walker.y, energy: walker.energy };
+    open.moveAgent(walker, { dx: 1, dy: 0 });
+
+    expect(walker.x).toBe(before.x);
+    expect(walker.y).toBe(before.y);
+    expect(walker.energy).toBe(before.energy);
+  });
+
+  it("charges extra movement energy on high-cost terrain", () => {
+    const cheap = new Simulation({
+      environmentMode: "closed",
+      width: 8,
+      height: 8,
+      initialAgents: 0,
+      barrierThreshold: 1.01,
+      terrainCostScale: 0,
+      seed: 20260542
+    });
+    const costly = new Simulation({
+      environmentMode: "closed",
+      width: 8,
+      height: 8,
+      initialAgents: 0,
+      barrierThreshold: 1.01,
+      terrainCostScale: 1,
+      seed: 20260542
+    });
+    const genome = testGenome({ moveCost: GENOME_BOUNDS.moveCost.max });
+    const cheapAgent = cheap.spawnAgent(0, 0, genome, 20);
+    const costlyAgent = costly.spawnAgent(0, 0, genome, 20);
+
+    cheap.moveAgent(cheapAgent, { dx: 1, dy: 0 });
+    costly.moveAgent(costlyAgent, { dx: 1, dy: 0 });
+
+    expect(cheapAgent.energy).toBeCloseTo(20 - GENOME_BOUNDS.moveCost.max);
+    expect(costlyAgent.energy).toBeLessThan(cheapAgent.energy);
+    expect(20 - costlyAgent.energy).toBeCloseTo(GENOME_BOUNDS.moveCost.max * movementCostAt(1, 0, costly.config));
+  });
+
   it("draws agents toward richer terrain over time", () => {
     const sim = new Simulation({
       width: 48,
       height: 32,
       initialAgents: 24,
       maxAgents: 80,
+      barrierThreshold: 1.01,
+      terrainCostScale: 0,
       pressureDiffusion: 0,
       seed: 20260531
     });
@@ -689,6 +810,7 @@ describe("typed simulation core", () => {
       width: 4,
       height: 4,
       initialAgents: 0,
+      barrierThreshold: 1.01,
       resourceCap: 10,
       seed: 41
     });

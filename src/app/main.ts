@@ -95,12 +95,19 @@ function render(): void {
     const r = cell.resource / sim.config.resourceCap;
     const t = Math.min(cell.trace / 9, 1);
     const p = Math.min(cell.pressure / 3, 1);
+    const m = Math.min(Math.max(cell.movementCost - 1, 0), 1);
     const offset = i * 4;
 
-    data[offset] = Math.floor(8 + r * 64 + p * 38);
-    data[offset + 1] = Math.floor(12 + r * 154 + t * 58);
-    data[offset + 2] = Math.floor(13 + t * 156 + p * 36);
+    data[offset] = Math.floor(8 + r * 64 + p * 38 - m * 16);
+    data[offset + 1] = Math.floor(12 + r * 154 + t * 58 - m * 12);
+    data[offset + 2] = Math.floor(13 + t * 156 + p * 36 + m * 40);
     data[offset + 3] = 255;
+
+    if (cell.barrier) {
+      data[offset] = 5;
+      data[offset + 1] = 7;
+      data[offset + 2] = 8;
+    }
   }
 
   const buffer = document.createElement("canvas");
