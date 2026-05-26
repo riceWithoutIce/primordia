@@ -44,6 +44,11 @@ describe("primordia simulation smoke", () => {
       "m-pressure",
       "m-events",
       "m-last-event",
+      "m-processes",
+      "m-last-process",
+      "m-species",
+      "m-dominant-species",
+      "m-moisture",
       "m-energy",
       "m-generation",
       "m-births",
@@ -63,6 +68,15 @@ describe("primordia simulation smoke", () => {
     const snapshotIds = ["snapshot", "copy-snapshot", "download-snapshot", "snapshot-status"];
 
     for (const id of snapshotIds) {
+      expect(html).toContain(`id="${id}"`);
+    }
+  });
+
+  it("keeps map view controls wired in the page shell", () => {
+    const html = readFileSync("index.html", "utf8");
+    const viewIds = ["view-resource", "view-terrain", "view-biome", "view-pressure", "view-lineage"];
+
+    for (const id of viewIds) {
       expect(html).toContain(`id="${id}"`);
     }
   });

@@ -1,4 +1,12 @@
-import { Simulation, type Agent, type EnvironmentEventRecord, type ExperimentSnapshot } from "../core/primordia";
+import {
+  Simulation,
+  type Agent,
+  type EnvironmentCell,
+  type EnvironmentEventRecord,
+  type EnvironmentProcessRecord,
+  type ExperimentSnapshot,
+  type TerrainType
+} from "../core/primordia";
 import { lineageFillStyle } from "./lineageColor";
 import "./styles.css";
 
@@ -10,6 +18,11 @@ let lastFrameTime = 0;
 let tickAccumulator = 0;
 let lastSnapshot: ExperimentSnapshot | null = null;
 let lastSnapshotJson = "";
+let viewMode: ViewMode = "resource";
+let renderBuffer: HTMLCanvasElement | null = null;
+let renderBufferCtx: CanvasRenderingContext2D | null = null;
+
+type ViewMode = "resource" | "terrain" | "biome" | "pressure" | "lineage";
 
 const speed = getElement<HTMLInputElement>("speed");
 const speedLabel = getElement<HTMLOutputElement>("speed-label");
@@ -20,6 +33,7 @@ const snapshot = getElement<HTMLButtonElement>("snapshot");
 const copySnapshot = getElement<HTMLButtonElement>("copy-snapshot");
 const downloadSnapshot = getElement<HTMLButtonElement>("download-snapshot");
 const snapshotStatus = getElement<HTMLOutputElement>("snapshot-status");
+const viewButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".view-mode"));
 
 const metrics = {
   tick: getElement<HTMLElement>("m-tick"),
@@ -35,6 +49,11 @@ const metrics = {
   totalPressure: getElement<HTMLElement>("m-pressure"),
   events: getElement<HTMLElement>("m-events"),
   lastEvent: getElement<HTMLElement>("m-last-event"),
+  processes: getElement<HTMLElement>("m-processes"),
+  lastProcess: getElement<HTMLElement>("m-last-process"),
+  species: getElement<HTMLElement>("m-species"),
+  dominantSpecies: getElement<HTMLElement>("m-dominant-species"),
+  moisture: getElement<HTMLElement>("m-moisture"),
   energy: getElement<HTMLElement>("m-energy"),
   generation: getElement<HTMLElement>("m-generation"),
   births: getElement<HTMLElement>("m-births"),
@@ -83,6 +102,19 @@ downloadSnapshot.addEventListener("click", () => {
   downloadSnapshotJson();
 });
 
+for (const button of viewButtons) {
+  button.addEventListener("click", () => {
+    const nextView = button.dataset.view;
+    if (isViewMode(nextView)) {
+      viewMode = nextView;
+      for (const item of viewButtons) {
+        item.classList.toggle("active", item === button);
+      }
+      render();
+    }
+  });
+}
+
 function getElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) {
@@ -113,44 +145,101 @@ function render(): void {
 
   for (let i = 0; i < sim.size; i += 1) {
     const cell = sim.environmentAt(i);
-    const r = cell.resource / sim.config.resourceCap;
-    const t = Math.min(cell.trace / 9, 1);
-    const p = Math.min(cell.pressure / 3, 1);
-    const m = Math.min(Math.max(cell.movementCost - 1, 0), 1);
     const offset = i * 4;
-
-    data[offset] = Math.floor(8 + r * 64 + p * 38 - m * 16);
-    data[offset + 1] = Math.floor(12 + r * 154 + t * 58 - m * 12);
-    data[offset + 2] = Math.floor(13 + t * 156 + p * 36 + m * 40);
-    data[offset + 3] = 255;
-
-    if (cell.barrier) {
-      data[offset] = 5;
-      data[offset + 1] = 7;
-      data[offset + 2] = 8;
-    }
+    paintCell(data, offset, cell);
   }
 
-  const buffer = document.createElement("canvas");
-  buffer.width = sim.width;
-  buffer.height = sim.height;
-  const bufferCtx = buffer.getContext("2d");
-  if (!bufferCtx) {
-    throw new Error("Could not create render buffer");
-  }
+  const { buffer, bufferCtx } = getRenderBuffer(sim.width, sim.height);
   bufferCtx.putImageData(image, 0, 0);
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(buffer, 0, 0, canvas.width, canvas.height);
 
-  for (const agent of sim.agents) {
-    drawAgent(agent, cellW, cellH);
+  if (viewMode !== "terrain" && viewMode !== "biome") {
+    for (const agent of sim.agents) {
+      drawAgent(agent, cellW, cellH);
+    }
   }
 
   const m = sim.metrics();
   drawEventPulse(m.lastEvent, cellW, cellH);
+  drawProcessPulse(m.lastProcess, cellW, cellH);
   updateMetrics(m);
+}
+
+function getRenderBuffer(width: number, height: number): { buffer: HTMLCanvasElement; bufferCtx: CanvasRenderingContext2D } {
+  if (!renderBuffer || !renderBufferCtx) {
+    renderBuffer = document.createElement("canvas");
+    renderBufferCtx = renderBuffer.getContext("2d");
+    if (!renderBufferCtx) {
+      throw new Error("Could not create render buffer");
+    }
+  }
+
+  if (renderBuffer.width !== width || renderBuffer.height !== height) {
+    renderBuffer.width = width;
+    renderBuffer.height = height;
+  }
+
+  return { buffer: renderBuffer, bufferCtx: renderBufferCtx };
+}
+
+function paintCell(data: Uint8ClampedArray, offset: number, cell: EnvironmentCell): void {
+  if (viewMode === "terrain") {
+    const elevation = cell.elevation;
+    const moisture = Math.min(1, cell.moistureBase + cell.moistureDelta * 0.22);
+    data[offset] = Math.floor(18 + elevation * 126 + moisture * 20);
+    data[offset + 1] = Math.floor(26 + elevation * 88 + moisture * 92);
+    data[offset + 2] = Math.floor(32 + elevation * 64 + moisture * 88);
+    data[offset + 3] = 255;
+    return;
+  }
+
+  if (viewMode === "biome") {
+    const color = biomeColor(cell.terrainType);
+    data[offset] = color[0];
+    data[offset + 1] = color[1];
+    data[offset + 2] = color[2];
+    data[offset + 3] = 255;
+    return;
+  }
+
+  if (viewMode === "pressure") {
+    const p = Math.min(cell.pressure / 4, 1);
+    const t = Math.min(cell.trace / 10, 1);
+    const moisture = Math.min(cell.moistureDelta / 2, 1);
+    data[offset] = Math.floor(18 + p * 188 + t * 28);
+    data[offset + 1] = Math.floor(18 + moisture * 92);
+    data[offset + 2] = Math.floor(24 + t * 104 + moisture * 80);
+    data[offset + 3] = 255;
+    return;
+  }
+
+  if (viewMode === "lineage") {
+    const fertility = Math.min(cell.fertility, 1);
+    data[offset] = Math.floor(12 + fertility * 34);
+    data[offset + 1] = Math.floor(16 + fertility * 48);
+    data[offset + 2] = Math.floor(18 + fertility * 38);
+    data[offset + 3] = 255;
+    return;
+  }
+
+  const r = cell.resource / sim.config.resourceCap;
+  const t = Math.min(cell.trace / 9, 1);
+  const p = Math.min(cell.pressure / 3, 1);
+  const m = Math.min(Math.max(cell.movementCost - 1, 0), 1);
+
+  data[offset] = Math.floor(8 + r * 64 + p * 38 - m * 16);
+  data[offset + 1] = Math.floor(12 + r * 154 + t * 58 - m * 12);
+  data[offset + 2] = Math.floor(13 + t * 156 + p * 36 + m * 40);
+  data[offset + 3] = 255;
+
+  if (cell.barrier) {
+    data[offset] = 5;
+    data[offset + 1] = 7;
+    data[offset + 2] = 8;
+  }
 }
 
 function drawAgent(agent: Agent, cellW: number, cellH: number): void {
@@ -194,6 +283,23 @@ function drawEventPulse(event: EnvironmentEventRecord | null, cellW: number, cel
   ctx.stroke();
 }
 
+function drawProcessPulse(process: EnvironmentProcessRecord | null, cellW: number, cellH: number): void {
+  if (!process || !process.active) {
+    return;
+  }
+
+  const x = (process.x + 0.5) * cellW;
+  const y = (process.y + 0.5) * cellH;
+  const radius = Math.max(cellW, cellH) * process.radius;
+  const alpha = Math.max(0.12, 1 - process.age / Math.max(1, process.duration));
+
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(101, 196, 224, ${alpha * 0.55})`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
 function updateMetrics(m = sim.metrics()): void {
   metrics.tick.textContent = String(m.tick);
   metrics.seed.textContent = String(m.seed);
@@ -208,6 +314,11 @@ function updateMetrics(m = sim.metrics()): void {
   metrics.totalPressure.textContent = formatTotal(m.totalPressure);
   metrics.events.textContent = String(m.eventCount);
   metrics.lastEvent.textContent = formatEvent(m.lastEvent);
+  metrics.processes.textContent = `${m.activeProcesses}/${m.processCount}`;
+  metrics.lastProcess.textContent = formatProcess(m.lastProcess);
+  metrics.species.textContent = String(m.speciesCount);
+  metrics.dominantSpecies.textContent = m.speciesFate.dominantId === null ? "-" : `#${m.speciesFate.dominantId}`;
+  metrics.moisture.textContent = formatTotal(m.totalMoisture);
   metrics.energy.textContent = m.averageEnergy.toFixed(1);
   metrics.generation.textContent = String(m.maxGeneration);
   metrics.births.textContent = String(m.births);
@@ -231,6 +342,37 @@ function formatEvent(event: EnvironmentEventRecord | null): string {
   }
 
   return `${event.kind} ${event.x},${event.y}`;
+}
+
+function formatProcess(process: EnvironmentProcessRecord | null): string {
+  if (!process) {
+    return "-";
+  }
+
+  return `${process.kind} ${process.x},${process.y}`;
+}
+
+function biomeColor(type: TerrainType): [number, number, number] {
+  switch (type) {
+    case "ocean":
+      return [19, 58, 82];
+    case "coast":
+      return [62, 114, 113];
+    case "plain":
+      return [73, 137, 82];
+    case "hill":
+      return [105, 122, 75];
+    case "mountain":
+      return [147, 150, 142];
+    case "wetland":
+      return [45, 119, 104];
+    case "desert":
+      return [171, 143, 78];
+  }
+}
+
+function isViewMode(value: string | undefined): value is ViewMode {
+  return value === "resource" || value === "terrain" || value === "biome" || value === "pressure" || value === "lineage";
 }
 
 function tickRate(): number {

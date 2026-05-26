@@ -26,6 +26,11 @@ function testGenome(overrides: Partial<Genome> = {}): Genome {
     resourceAffinity: 1,
     reproductionThreshold: 90,
     mutationRate: 0.04,
+    inertia: 0.4,
+    riskTolerance: 0.35,
+    pressureAversion: 0.9,
+    terrainAffinity: 0.2,
+    explorationBias: 0.22,
     ...overrides
   };
 }
@@ -68,6 +73,16 @@ describe("typed simulation core", () => {
     expect(sim.config.initialEnergy).toBe(DEFAULTS.initialEnergy);
     expect(sim.config.environmentMode).toBe("flux");
     expect(sim.agents).toHaveLength(0);
+  });
+
+  it("uses a large world as the Phase 2.2 default", () => {
+    const sim = new Simulation({ initialAgents: 0 });
+
+    expect(DEFAULTS.width).toBe(256);
+    expect(DEFAULTS.height).toBe(160);
+    expect(sim.width).toBe(256);
+    expect(sim.height).toBe(160);
+    expect(sim.size).toBe(40960);
   });
 
   it("exposes environment cells as typed wrapped-coordinate snapshots", () => {
@@ -154,6 +169,23 @@ describe("typed simulation core", () => {
     const minResource = Math.min(...Array.from(first.resources));
     expect(maxResource).toBeGreaterThan(minResource + first.config.resourceCap * 0.25);
     expect(first.cellAt(5, 7).resource).toBeCloseTo(resourceTerrainAt(5, 7, first.config));
+  });
+
+  it("generates deterministic biome layers with multiple ecological niches", () => {
+    const sim = new Simulation({
+      width: 96,
+      height: 60,
+      initialAgents: 0,
+      seed: 20260601
+    });
+    const biomeCounts = sim.metrics().biomeCounts;
+    const occupiedBiomes = Object.values(biomeCounts).filter((count) => count > 0).length;
+
+    expect(occupiedBiomes).toBeGreaterThanOrEqual(5);
+    expect(biomeCounts.ocean).toBeGreaterThan(0);
+    expect(biomeCounts.mountain + biomeCounts.hill).toBeGreaterThan(0);
+    expect(sim.cellAt(0, 0).elevation).toBeGreaterThanOrEqual(0);
+    expect(sim.cellAt(0, 0).elevation).toBeLessThanOrEqual(1);
   });
 
   it("exposes deterministic fertility derived from resource terrain", () => {
@@ -249,6 +281,53 @@ describe("typed simulation core", () => {
     expect(replay.metrics().lastEvent).toEqual(first.metrics().lastEvent);
     expect(Array.from(replay.resources)).toEqual(Array.from(first.resources));
     expect(Array.from(replay.pressure)).toEqual(Array.from(first.pressure));
+  });
+
+  it("runs deterministic stateful environmental processes", () => {
+    const config: SimulationConfigPatch = {
+      environmentMode: "flux",
+      width: 48,
+      height: 32,
+      initialAgents: 0,
+      resourceGrowth: 0,
+      processInterval: 4,
+      processDuration: 6,
+      processRadius: 4,
+      processIntensity: 1.3,
+      eventInterval: 0,
+      seed: 20260602
+    };
+    const first = new Simulation(config);
+    const replay = new Simulation(config);
+
+    first.step(8);
+    replay.step(8);
+
+    expect(first.metrics().processCount).toBeGreaterThan(0);
+    expect(first.metrics().activeProcesses).toBeGreaterThan(0);
+    expect(first.metrics().totalMoisture).toBeGreaterThan(0);
+    expect(replay.metrics().lastProcess).toEqual(first.metrics().lastProcess);
+    expect(Array.from(replay.moistureDelta)).toEqual(Array.from(first.moistureDelta));
+  });
+
+  it("expires environmental processes after their lifecycle", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 32,
+      height: 20,
+      initialAgents: 0,
+      resourceGrowth: 0,
+      processInterval: 2,
+      processDuration: 3,
+      processRadius: 3,
+      eventInterval: 0,
+      seed: 20260603
+    });
+
+    sim.step(12);
+
+    expect(sim.metrics().processCount).toBeGreaterThan(sim.metrics().activeProcesses);
+    expect(sim.world.processHistory.length).toBeGreaterThan(0);
   });
 
   it("lets bloom events add bounded resource without consuming random simulation state", () => {
@@ -521,12 +600,15 @@ describe("typed simulation core", () => {
 
     expect(snapshot).toEqual(replay.snapshot({ environmentSampleStride: 4 }));
     expect(snapshot.kind).toBe("primordia.experiment-snapshot");
-    expect(snapshot.schemaVersion).toBe(1);
+    expect(snapshot.schemaVersion).toBe(2);
     expect(snapshot.id).toContain("seed-20260543-tick-24");
     expect(snapshot.config).toEqual(first.config);
     expect(snapshot.metrics).toEqual(first.metrics());
+    expect(snapshot.world.width).toBe(first.width);
+    expect(snapshot.world.biomeCounts).toEqual(first.metrics().biomeCounts);
     expect(snapshot.agents).toHaveLength(first.agents.length);
     expect(snapshot.lineages).toHaveLength(first.metrics().lineageFate.total);
+    expect(snapshot.species).toHaveLength(first.metrics().speciesFate.total);
     expect(snapshot.environment.sampleStride).toBe(4);
     expect(snapshot.environment.samples.length).toBe(snapshot.environment.sampledCells);
     expect(snapshot.environment.samples[0]).toMatchObject({
@@ -535,6 +617,7 @@ describe("typed simulation core", () => {
     });
     expect(snapshot.environment.averageResource).toBeGreaterThanOrEqual(0);
     expect(snapshot.environment.barrierCells).toBeGreaterThanOrEqual(0);
+    expect(snapshot.environment.samples[0].terrainType).toBeDefined();
   });
 
   it("lets snapshot sampling density be configured without mutating the simulation", () => {
@@ -921,6 +1004,50 @@ describe("typed simulation core", () => {
 
     expect(earlyChild.energy).toBeLessThan(lateChild.energy);
     expect(early.pressure[early.index(1, 1)]).toBeGreaterThan(pressureBeforeReproduction);
+  });
+
+  it("adds bounded behavior genome traits for Phase 2.2", () => {
+    const child = constrainGenome(
+      testGenome({
+        inertia: 99,
+        riskTolerance: -10,
+        pressureAversion: 99,
+        terrainAffinity: -99,
+        explorationBias: 99
+      })
+    );
+
+    expect(child.inertia).toBeLessThanOrEqual(GENOME_BOUNDS.inertia.max);
+    expect(child.riskTolerance).toBeGreaterThanOrEqual(GENOME_BOUNDS.riskTolerance.min);
+    expect(child.pressureAversion).toBeLessThanOrEqual(GENOME_BOUNDS.pressureAversion.max);
+    expect(child.terrainAffinity).toBeGreaterThanOrEqual(GENOME_BOUNDS.terrainAffinity.min);
+    expect(child.explorationBias).toBeLessThanOrEqual(GENOME_BOUNDS.explorationBias.max);
+  });
+
+  it("tracks emergent species identifiers separately from lineages", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 24,
+      height: 18,
+      initialAgents: 0,
+      seed: 20260604
+    });
+    const agent = sim.spawnAgent(
+      5,
+      5,
+      testGenome({
+        pressureAversion: GENOME_BOUNDS.pressureAversion.max,
+        terrainAffinity: GENOME_BOUNDS.terrainAffinity.max,
+        explorationBias: GENOME_BOUNDS.explorationBias.max
+      }),
+      80,
+      6,
+      7
+    );
+
+    expect(agent.speciesId).not.toBe(agent.lineageId);
+    expect(sim.metrics().speciesFate.total).toBe(1);
+    expect(sim.snapshot().species[0].speciesId).toBe(agent.speciesId);
   });
 
   it("recovers less death residue as resource in high-pressure cells", () => {

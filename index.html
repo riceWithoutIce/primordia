@@ -36,6 +36,14 @@
           <input id="speed" type="range" min="0" max="8" value="6">
         </label>
 
+        <div class="view-modes" aria-label="map views">
+          <button class="view-mode active" id="view-resource" type="button" data-view="resource">resource</button>
+          <button class="view-mode" id="view-terrain" type="button" data-view="terrain">terrain</button>
+          <button class="view-mode" id="view-biome" type="button" data-view="biome">biome</button>
+          <button class="view-mode" id="view-pressure" type="button" data-view="pressure">pressure</button>
+          <button class="view-mode" id="view-lineage" type="button" data-view="lineage">lineage</button>
+        </div>
+
         <dl class="metrics">
           <div><dt>tick</dt><dd id="m-tick">0</dd></div>
           <div><dt>seed</dt><dd id="m-seed">0</dd></div>
@@ -50,6 +58,11 @@
           <div><dt>总压力</dt><dd id="m-pressure">0</dd></div>
           <div><dt>事件</dt><dd id="m-events">0</dd></div>
           <div><dt>最近事件</dt><dd id="m-last-event">-</dd></div>
+          <div><dt>环境过程</dt><dd id="m-processes">0</dd></div>
+          <div><dt>最近过程</dt><dd id="m-last-process">-</dd></div>
+          <div><dt>物种</dt><dd id="m-species">0</dd></div>
+          <div><dt>优势物种</dt><dd id="m-dominant-species">-</dd></div>
+          <div><dt>湿度脉冲</dt><dd id="m-moisture">0</dd></div>
           <div><dt>平均能量</dt><dd id="m-energy">0</dd></div>
           <div><dt>最高世代</dt><dd id="m-generation">0</dd></div>
           <div><dt>出生</dt><dd id="m-births">0</dd></div>

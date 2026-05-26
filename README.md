@@ -105,5 +105,6 @@ sim.step(120);
 - [第一阶段规格](docs/03-phase-one-spec.md)
 - [路线图](docs/04-roadmap.md)
 - [第二阶段验收](docs/05-phase-two-acceptance.md)
+- [Phase 2.2 世界化环境验收](docs/06-phase-two-two-acceptance.md)
 - [LLM 语义器官研究线](docs/future/llm-semantic-organ.md)
 - [AI 工作区](ai/README.md)

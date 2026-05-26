@@ -104,6 +104,12 @@ h1 {
   gap: 8px;
 }
 
+.view-modes {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
 button {
   min-height: 40px;
   border: 1px solid var(--line);
@@ -121,6 +127,19 @@ button:disabled {
   color: #68736f;
   cursor: not-allowed;
   background: #121718;
+}
+
+.view-mode {
+  min-height: 34px;
+  padding: 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.view-mode.active {
+  border-color: #d7e58a;
+  color: #f4f7d0;
+  background: #29302a;
 }
 
 .snapshot-status {

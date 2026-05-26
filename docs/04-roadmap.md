@@ -60,7 +60,29 @@
 
 - Phase 2 已完成并验收：资源地形、肥力通量、局部枯竭/恢复、谱系颜色、谱系命运指标、压力扩散、屏障与移动成本、确定性环境事件、实验快照导出和 Phase 2 验收记录均已完成。
 - 验收记录见 [Phase 2 Acceptance Review](05-phase-two-acceptance.md)。
-- 下一步是 Phase 3：行为器官与工具边界。进入实施前需要重新确认工具仍只作用于培养皿内部，不能访问真实网络、文件系统、shell、凭证或外部权限。
+- 下一步先进入 Phase 2.2：世界化环境与分化生态，再进入 Phase 3。Phase 2.2 用来加厚环境、行为和性能基础，避免 Phase 3 的工具系统建立在过于单薄的世界模型上。
+
+## Phase 2.2：世界化环境与分化生态
+
+核心问题：生态能不能从资源地图推进成一个可观察、可复现、可承载分化的小世界？
+
+目标：
+
+- 将默认培养皿扩大到 `256 x 160`，提前暴露性能、渲染、快照和算法结构问题。
+- 将环境拆成静态地形和动态场：elevation、moisture、temperature、fertility、terrainType、resource、trace、pressure、moistureDelta。
+- 用自研确定性地形生成形成 ocean、coast、plain、hill、mountain、wetland、desert 等生态位。
+- 将环境事件扩展为有生命周期的环境过程，例如 moisture-front，使扰动能生成、移动、扩散、衰减。
+- 扩展行为 genome，引入 inertia、riskTolerance、pressureAversion、terrainAffinity、explorationBias，并通过局部规则改善卡边/卡障碍行为。
+- 引入 species/clade identifier 雏形，让谱系在多代繁殖后能出现可观察的分化标签。
+- 重构 `src/core` 为 config/random/world/life/sim 模块，保留 `Simulation` 简单公开 API。
+
+成功标准：
+
+- 同 seed、同 config、同 tick 的世界、过程、agent 指标可复现。
+- 地形和生态位肉眼可读，资源带由地形/湿度/压力共同塑造。
+- 环境过程不是孤立点，而是能持续影响局部 resource、pressure、trace 或 moisture。
+- 行为差异和 species/clade 指标能在 UI 或 snapshot 中观察。
+- `npm run check` 和 `npm run build` 通过；必要时进行浏览器人工验证。
 
 ## Phase 3：行为器官与工具边界
 
