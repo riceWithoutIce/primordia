@@ -24,6 +24,13 @@
           <button id="reset" type="button">重置</button>
         </div>
 
+        <div class="snapshot-controls" aria-label="实验快照">
+          <button id="snapshot" type="button">记录</button>
+          <button id="copy-snapshot" type="button" disabled>复制</button>
+          <button id="download-snapshot" type="button" disabled>下载</button>
+        </div>
+        <output id="snapshot-status" class="snapshot-status">未记录</output>
+
         <label class="slider">
           <span>速度 <output id="speed-label">16 tick/s</output></span>
           <input id="speed" type="range" min="0" max="8" value="6">

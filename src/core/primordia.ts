@@ -119,6 +119,63 @@ export interface Metrics {
   lastEvent: EnvironmentEventRecord | null;
 }
 
+export interface SnapshotAgent extends GridPoint {
+  id: number;
+  lineageId: number;
+  energy: number;
+  age: number;
+  generation: number;
+  lastAction: AgentAction;
+  genome: Genome;
+}
+
+export interface SnapshotLineageSummary {
+  lineageId: number;
+  agents: number;
+  maxGeneration: number;
+  averageEnergy: number;
+  averageAge: number;
+}
+
+export interface SnapshotCellSample extends GridPoint {
+  resource: number;
+  fertility: number;
+  movementCost: number;
+  barrier: boolean;
+  trace: number;
+  pressure: number;
+}
+
+export interface SnapshotEnvironmentSummary {
+  sampleStride: number;
+  sampledCells: number;
+  barrierCells: number;
+  resourceHotspots: number;
+  pressureHotspots: number;
+  averageResource: number;
+  averageTrace: number;
+  averagePressure: number;
+  averageFertility: number;
+  averageMovementCost: number;
+  samples: SnapshotCellSample[];
+}
+
+export interface ExperimentSnapshot {
+  kind: "primordia.experiment-snapshot";
+  schemaVersion: 1;
+  id: string;
+  tick: number;
+  config: SimulationConfig;
+  metrics: Metrics;
+  lineages: SnapshotLineageSummary[];
+  environment: SnapshotEnvironmentSummary;
+  agents: SnapshotAgent[];
+}
+
+export interface ExperimentSnapshotOptions {
+  environmentSampleStride?: number;
+}
+
 export const DEFAULTS: SimulationConfig = {
   environmentMode: "flux",
   width: 96,
@@ -347,6 +404,23 @@ function reproductionEfficiency(genome: Genome): number {
   const bounds = GENOME_BOUNDS.reproductionThreshold;
   const thresholdPosition = (genome.reproductionThreshold - bounds.min) / (bounds.max - bounds.min);
   return clamp(0.72 + thresholdPosition * 0.22, 0.72, 0.94);
+}
+
+function roundSnapshotValue(value: number): number {
+  return Number(value.toFixed(6));
+}
+
+function cloneGenome(genome: Genome): Genome {
+  return {
+    senseRadius: genome.senseRadius,
+    metabolism: roundSnapshotValue(genome.metabolism),
+    moveCost: roundSnapshotValue(genome.moveCost),
+    harvestRate: roundSnapshotValue(genome.harvestRate),
+    traceAffinity: roundSnapshotValue(genome.traceAffinity),
+    resourceAffinity: roundSnapshotValue(genome.resourceAffinity),
+    reproductionThreshold: roundSnapshotValue(genome.reproductionThreshold),
+    mutationRate: roundSnapshotValue(genome.mutationRate)
+  };
 }
 
 export class Simulation {
@@ -821,6 +895,143 @@ export class Simulation {
       generation: parent.generation + 1,
       genome: childGenome,
       lastAction: "born"
+    };
+  }
+
+  snapshot(options: ExperimentSnapshotOptions = {}): ExperimentSnapshot {
+    const metrics = this.metrics();
+    return {
+      kind: "primordia.experiment-snapshot",
+      schemaVersion: 1,
+      id: `seed-${this.config.seed}-tick-${this.tickCount}-agents-${this.agents.length}-events-${this.eventCount}`,
+      tick: this.tickCount,
+      config: { ...this.config },
+      metrics,
+      lineages: this.snapshotLineages(),
+      environment: this.snapshotEnvironment(options),
+      agents: this.agents.map((agent) => ({
+        id: agent.id,
+        lineageId: agent.lineageId,
+        x: agent.x,
+        y: agent.y,
+        energy: roundSnapshotValue(agent.energy),
+        age: agent.age,
+        generation: agent.generation,
+        lastAction: agent.lastAction,
+        genome: cloneGenome(agent.genome)
+      }))
+    };
+  }
+
+  snapshotLineages(): SnapshotLineageSummary[] {
+    const lineages = new Map<
+      number,
+      {
+        agents: number;
+        totalEnergy: number;
+        totalAge: number;
+        maxGeneration: number;
+      }
+    >();
+
+    for (const lineageId of this.knownLineages) {
+      lineages.set(lineageId, {
+        agents: 0,
+        totalEnergy: 0,
+        totalAge: 0,
+        maxGeneration: 0
+      });
+    }
+
+    for (const agent of this.agents) {
+      const summary =
+        lineages.get(agent.lineageId) ??
+        {
+          agents: 0,
+          totalEnergy: 0,
+          totalAge: 0,
+          maxGeneration: 0
+        };
+      summary.agents += 1;
+      summary.totalEnergy += agent.energy;
+      summary.totalAge += agent.age;
+      summary.maxGeneration = Math.max(summary.maxGeneration, agent.generation);
+      lineages.set(agent.lineageId, summary);
+    }
+
+    return Array.from(lineages, ([lineageId, summary]) => ({
+      lineageId,
+      agents: summary.agents,
+      maxGeneration: summary.maxGeneration,
+      averageEnergy: summary.agents ? roundSnapshotValue(summary.totalEnergy / summary.agents) : 0,
+      averageAge: summary.agents ? roundSnapshotValue(summary.totalAge / summary.agents) : 0
+    })).sort((a, b) => a.lineageId - b.lineageId);
+  }
+
+  snapshotEnvironment(options: ExperimentSnapshotOptions): SnapshotEnvironmentSummary {
+    const requestedStride = options.environmentSampleStride ?? 8;
+    const sampleStride = Math.max(1, Math.floor(requestedStride));
+    const samples: SnapshotCellSample[] = [];
+    let barrierCells = 0;
+    let resourceHotspots = 0;
+    let pressureHotspots = 0;
+    let totalResource = 0;
+    let totalTrace = 0;
+    let totalPressure = 0;
+    let totalFertility = 0;
+    let totalMovementCost = 0;
+
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const idx = this.index(x, y);
+        const resource = this.resources[idx];
+        const trace = this.traces[idx];
+        const pressure = this.pressure[idx];
+        const fertility = resourceFertilityAt(x, y, this.config);
+        const movementCost = movementCostAt(x, y, this.config);
+        const barrier = isBarrierAt(x, y, this.config);
+
+        totalResource += resource;
+        totalTrace += trace;
+        totalPressure += pressure;
+        totalFertility += fertility;
+        totalMovementCost += movementCost;
+        if (barrier) {
+          barrierCells += 1;
+        }
+        if (this.config.resourceCap > 0 && resource >= this.config.resourceCap * 0.75) {
+          resourceHotspots += 1;
+        }
+        if (pressure >= 2) {
+          pressureHotspots += 1;
+        }
+        if (x % sampleStride === 0 && y % sampleStride === 0) {
+          samples.push({
+            x,
+            y,
+            resource: roundSnapshotValue(resource),
+            fertility: roundSnapshotValue(fertility),
+            movementCost: roundSnapshotValue(movementCost),
+            barrier,
+            trace: roundSnapshotValue(trace),
+            pressure: roundSnapshotValue(pressure)
+          });
+        }
+      }
+    }
+
+    return {
+      sampleStride,
+      sampledCells: samples.length,
+      barrierCells,
+      resourceHotspots,
+      pressureHotspots,
+      averageResource: roundSnapshotValue(totalResource / this.size),
+      averageTrace: roundSnapshotValue(totalTrace / this.size),
+      averagePressure: roundSnapshotValue(totalPressure / this.size),
+      averageFertility: roundSnapshotValue(totalFertility / this.size),
+      averageMovementCost: roundSnapshotValue(totalMovementCost / this.size),
+      samples
     };
   }
 

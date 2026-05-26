@@ -1,4 +1,4 @@
-import { Simulation, type Agent, type EnvironmentEventRecord } from "../core/primordia";
+import { Simulation, type Agent, type EnvironmentEventRecord, type ExperimentSnapshot } from "../core/primordia";
 import { lineageFillStyle } from "./lineageColor";
 import "./styles.css";
 
@@ -8,12 +8,18 @@ let sim = new Simulation();
 let running = true;
 let lastFrameTime = 0;
 let tickAccumulator = 0;
+let lastSnapshot: ExperimentSnapshot | null = null;
+let lastSnapshotJson = "";
 
 const speed = getElement<HTMLInputElement>("speed");
 const speedLabel = getElement<HTMLOutputElement>("speed-label");
 const toggle = getElement<HTMLButtonElement>("toggle");
 const step = getElement<HTMLButtonElement>("step");
 const reset = getElement<HTMLButtonElement>("reset");
+const snapshot = getElement<HTMLButtonElement>("snapshot");
+const copySnapshot = getElement<HTMLButtonElement>("copy-snapshot");
+const downloadSnapshot = getElement<HTMLButtonElement>("download-snapshot");
+const snapshotStatus = getElement<HTMLOutputElement>("snapshot-status");
 
 const metrics = {
   tick: getElement<HTMLElement>("m-tick"),
@@ -61,7 +67,20 @@ reset.addEventListener("click", () => {
   tickAccumulator = 0;
   running = true;
   toggle.textContent = "暂停";
+  clearSnapshot();
   render();
+});
+
+snapshot.addEventListener("click", () => {
+  captureSnapshot();
+});
+
+copySnapshot.addEventListener("click", () => {
+  void copySnapshotToClipboard();
+});
+
+downloadSnapshot.addEventListener("click", () => {
+  downloadSnapshotJson();
 });
 
 function getElement<T extends HTMLElement>(id: string): T {
@@ -221,6 +240,50 @@ function tickRate(): number {
 
 function updateSpeedLabel(): void {
   speedLabel.textContent = `${tickRate()} tick/s`;
+}
+
+function captureSnapshot(): void {
+  lastSnapshot = sim.snapshot();
+  lastSnapshotJson = JSON.stringify(lastSnapshot, null, 2);
+  copySnapshot.disabled = false;
+  downloadSnapshot.disabled = false;
+  snapshotStatus.textContent = `已记录 ${lastSnapshot.id}`;
+}
+
+function clearSnapshot(): void {
+  lastSnapshot = null;
+  lastSnapshotJson = "";
+  copySnapshot.disabled = true;
+  downloadSnapshot.disabled = true;
+  snapshotStatus.textContent = "未记录";
+}
+
+async function copySnapshotToClipboard(): Promise<void> {
+  if (!lastSnapshotJson) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(lastSnapshotJson);
+    snapshotStatus.textContent = "已复制快照 JSON";
+  } catch {
+    snapshotStatus.textContent = "复制失败，可使用下载";
+  }
+}
+
+function downloadSnapshotJson(): void {
+  if (!lastSnapshot || !lastSnapshotJson) {
+    return;
+  }
+
+  const blob = new Blob([lastSnapshotJson], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${lastSnapshot.id}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  snapshotStatus.textContent = "已下载快照 JSON";
 }
 
 function advanceSimulation(now: number): void {

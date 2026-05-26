@@ -58,6 +58,15 @@ describe("primordia simulation smoke", () => {
     }
   });
 
+  it("keeps snapshot controls wired in the page shell", () => {
+    const html = readFileSync("index.html", "utf8");
+    const snapshotIds = ["snapshot", "copy-snapshot", "download-snapshot", "snapshot-status"];
+
+    for (const id of snapshotIds) {
+      expect(html).toContain(`id="${id}"`);
+    }
+  });
+
   it("maps lineage ids to stable visual colors", () => {
     const parent = { lineageId: 7, generation: 0 };
     const descendant = { lineageId: 7, generation: 6 };

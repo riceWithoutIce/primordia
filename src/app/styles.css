@@ -98,6 +98,12 @@ h1 {
   gap: 8px;
 }
 
+.snapshot-controls {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
 button {
   min-height: 40px;
   border: 1px solid var(--line);
@@ -109,6 +115,19 @@ button {
 
 button:hover {
   border-color: #5b6b66;
+}
+
+button:disabled {
+  color: #68736f;
+  cursor: not-allowed;
+  background: #121718;
+}
+
+.snapshot-status {
+  min-height: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .slider {

@@ -502,6 +502,59 @@ describe("typed simulation core", () => {
     expect(simulationSnapshot(replay)).toEqual(simulationSnapshot(first));
   });
 
+  it("records deterministic experiment snapshots for comparison", () => {
+    const config: SimulationConfigPatch = {
+      environmentMode: "flux",
+      width: 16,
+      height: 12,
+      initialAgents: 8,
+      maxAgents: 40,
+      eventInterval: 8,
+      seed: 20260543
+    };
+    const first = new Simulation(config);
+    const replay = new Simulation(config);
+
+    first.step(24);
+    replay.step(24);
+    const snapshot = first.snapshot({ environmentSampleStride: 4 });
+
+    expect(snapshot).toEqual(replay.snapshot({ environmentSampleStride: 4 }));
+    expect(snapshot.kind).toBe("primordia.experiment-snapshot");
+    expect(snapshot.schemaVersion).toBe(1);
+    expect(snapshot.id).toContain("seed-20260543-tick-24");
+    expect(snapshot.config).toEqual(first.config);
+    expect(snapshot.metrics).toEqual(first.metrics());
+    expect(snapshot.agents).toHaveLength(first.agents.length);
+    expect(snapshot.lineages).toHaveLength(first.metrics().lineageFate.total);
+    expect(snapshot.environment.sampleStride).toBe(4);
+    expect(snapshot.environment.samples.length).toBe(snapshot.environment.sampledCells);
+    expect(snapshot.environment.samples[0]).toMatchObject({
+      x: 0,
+      y: 0
+    });
+    expect(snapshot.environment.averageResource).toBeGreaterThanOrEqual(0);
+    expect(snapshot.environment.barrierCells).toBeGreaterThanOrEqual(0);
+  });
+
+  it("lets snapshot sampling density be configured without mutating the simulation", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 12,
+      height: 8,
+      initialAgents: 4,
+      seed: 20260544
+    });
+    sim.step(10);
+    const before = simulationSnapshot(sim);
+
+    const sparse = sim.snapshot({ environmentSampleStride: 6 });
+    const dense = sim.snapshot({ environmentSampleStride: 3 });
+
+    expect(dense.environment.sampledCells).toBeGreaterThan(sparse.environment.sampledCells);
+    expect(simulationSnapshot(sim)).toEqual(before);
+  });
+
   it("lets finite flux runs stay bounded while producing lifecycle events", () => {
     const sim = new Simulation({
       environmentMode: "flux",
