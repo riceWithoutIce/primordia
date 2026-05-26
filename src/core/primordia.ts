@@ -74,6 +74,15 @@ export interface DeathStats {
   overflow: number;
 }
 
+export interface LineageFateMetrics {
+  total: number;
+  living: number;
+  extinct: number;
+  dominantId: number | null;
+  dominantAgents: number;
+  dominantShare: number;
+}
+
 export interface Metrics {
   tick: number;
   seed: number;
@@ -83,6 +92,7 @@ export interface Metrics {
   averageEnergy: number;
   maxGeneration: number;
   lineageCount: number;
+  lineageFate: LineageFateMetrics;
   deathReasons: DeathStats;
   totalResource: number;
   totalTrace: number;
@@ -308,6 +318,7 @@ export class Simulation {
   births = 0;
   deaths = 0;
   deathReasons: DeathStats = createDeathStats();
+  knownLineages = new Set<number>();
   resources: Float32Array;
   traces: Float32Array;
   pressure: Float32Array;
@@ -343,6 +354,7 @@ export class Simulation {
     this.births = 0;
     this.deaths = 0;
     this.deathReasons = createDeathStats();
+    this.knownLineages = new Set<number>();
     this.agents = [];
 
     for (let i = 0; i < this.size; i += 1) {
@@ -387,6 +399,7 @@ export class Simulation {
   spawnAgent(x: number, y: number, genome: Genome, energy: number, generation = 0, lineageId?: number): Agent {
     const resolvedLineageId = lineageId ?? this.nextLineageId++;
     this.nextLineageId = Math.max(this.nextLineageId, resolvedLineageId + 1);
+    this.knownLineages.add(resolvedLineageId);
 
     const boundedGenome = constrainGenome(genome);
     const agent: Agent = {
@@ -622,12 +635,22 @@ export class Simulation {
   metrics(): Metrics {
     let totalEnergy = 0;
     let maxGeneration = 0;
-    const lineages = new Set<number>();
+    const lineageAgents = new Map<number, number>();
     for (const agent of this.agents) {
       totalEnergy += agent.energy;
       maxGeneration = Math.max(maxGeneration, agent.generation);
-      lineages.add(agent.lineageId);
+      lineageAgents.set(agent.lineageId, (lineageAgents.get(agent.lineageId) ?? 0) + 1);
     }
+    const livingLineages = lineageAgents.size;
+    let dominantId: number | null = null;
+    let dominantAgents = 0;
+    for (const [lineageId, count] of lineageAgents) {
+      if (count > dominantAgents) {
+        dominantId = lineageId;
+        dominantAgents = count;
+      }
+    }
+    const totalLineages = this.knownLineages.size;
 
     let totalResource = 0;
     let totalTrace = 0;
@@ -646,7 +669,15 @@ export class Simulation {
       deaths: this.deaths,
       averageEnergy: this.agents.length ? totalEnergy / this.agents.length : 0,
       maxGeneration,
-      lineageCount: lineages.size,
+      lineageCount: livingLineages,
+      lineageFate: {
+        total: totalLineages,
+        living: livingLineages,
+        extinct: Math.max(0, totalLineages - livingLineages),
+        dominantId,
+        dominantAgents,
+        dominantShare: this.agents.length ? dominantAgents / this.agents.length : 0
+      },
       deathReasons: { ...this.deathReasons },
       totalResource,
       totalTrace,

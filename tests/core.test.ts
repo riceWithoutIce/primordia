@@ -439,6 +439,32 @@ describe("typed simulation core", () => {
     expect(sim.metrics().maxGeneration).toBe(1);
   });
 
+  it("tracks lineage fate across living, extinct, and dominant lineages", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 4,
+      height: 4,
+      initialAgents: 0,
+      resourceCap: 0,
+      seed: 20260535
+    });
+    const fragile = testGenome({ metabolism: 1, moveCost: 0, harvestRate: 0, reproductionThreshold: 999 });
+    const durable = testGenome({ metabolism: 0.3, moveCost: 0, harvestRate: 0, reproductionThreshold: 999 });
+
+    sim.spawnAgent(0, 0, fragile, 0.2, 0, 101);
+    sim.spawnAgent(1, 0, durable, 8, 0, 202);
+    sim.spawnAgent(2, 0, durable, 8, 0, 202);
+    sim.step(1);
+
+    const fate = sim.metrics().lineageFate;
+    expect(fate.total).toBe(2);
+    expect(fate.living).toBe(1);
+    expect(fate.extinct).toBe(1);
+    expect(fate.dominantId).toBe(202);
+    expect(fate.dominantAgents).toBe(2);
+    expect(fate.dominantShare).toBe(1);
+  });
+
   it("constrains spawned genomes to fixed bounds", () => {
     const sim = new Simulation({
       environmentMode: "closed",

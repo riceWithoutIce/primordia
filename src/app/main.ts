@@ -20,6 +20,10 @@ const metrics = {
   seed: getElement<HTMLElement>("m-seed"),
   agents: getElement<HTMLElement>("m-agents"),
   lineages: getElement<HTMLElement>("m-lineages"),
+  lineagesTotal: getElement<HTMLElement>("m-lineages-total"),
+  lineagesExtinct: getElement<HTMLElement>("m-lineages-extinct"),
+  dominantLineage: getElement<HTMLElement>("m-dominant-lineage"),
+  dominantShare: getElement<HTMLElement>("m-dominant-share"),
   totalResource: getElement<HTMLElement>("m-resource"),
   totalTrace: getElement<HTMLElement>("m-trace"),
   totalPressure: getElement<HTMLElement>("m-pressure"),
@@ -144,6 +148,10 @@ function updateMetrics(): void {
   metrics.seed.textContent = String(m.seed);
   metrics.agents.textContent = String(m.agents);
   metrics.lineages.textContent = String(m.lineageCount);
+  metrics.lineagesTotal.textContent = String(m.lineageFate.total);
+  metrics.lineagesExtinct.textContent = String(m.lineageFate.extinct);
+  metrics.dominantLineage.textContent = m.lineageFate.dominantId === null ? "-" : `#${m.lineageFate.dominantId}`;
+  metrics.dominantShare.textContent = formatPercent(m.lineageFate.dominantShare);
   metrics.totalResource.textContent = formatTotal(m.totalResource);
   metrics.totalTrace.textContent = formatTotal(m.totalTrace);
   metrics.totalPressure.textContent = formatTotal(m.totalPressure);
@@ -158,6 +166,10 @@ function updateMetrics(): void {
 
 function formatTotal(value: number): string {
   return Math.round(value).toLocaleString("zh-CN");
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }
 
 function tickRate(): number {
