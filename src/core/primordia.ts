@@ -27,6 +27,7 @@ export interface SimulationConfig {
   resourceCap: number;
   traceDecay: number;
   pressureDecay: number;
+  pressureDiffusion: number;
   pressureGrowth: number;
   reproductionShare: number;
   seed: number;
@@ -110,6 +111,7 @@ export const DEFAULTS: SimulationConfig = {
   resourceCap: 9,
   traceDecay: 0.965,
   pressureDecay: 0.992,
+  pressureDiffusion: 0.06,
   pressureGrowth: 0.012,
   reproductionShare: 0.46,
   seed: 1337
@@ -484,6 +486,29 @@ export class Simulation {
         4
       );
     }
+    this.diffusePressure();
+  }
+
+  diffusePressure(): void {
+    const diffusion = clamp(this.config.pressureDiffusion, 0, 0.25);
+    if (diffusion <= 0) {
+      return;
+    }
+
+    const nextPressure = new Float32Array(this.size);
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const idx = this.index(x, y);
+        const neighborAverage =
+          (this.pressure[this.index(x + 1, y)] +
+            this.pressure[this.index(x - 1, y)] +
+            this.pressure[this.index(x, y + 1)] +
+            this.pressure[this.index(x, y - 1)]) /
+          4;
+        nextPressure[idx] = clamp(this.pressure[idx] * (1 - diffusion) + neighborAverage * diffusion, 0, 4);
+      }
+    }
+    this.pressure = nextPressure;
   }
 
   liveAgent(agent: Agent): Agent | null {

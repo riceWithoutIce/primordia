@@ -248,6 +248,7 @@ describe("typed simulation core", () => {
       height: 32,
       initialAgents: 24,
       maxAgents: 80,
+      pressureDiffusion: 0,
       seed: 20260531
     });
     let terrainTotal = 0;
@@ -380,6 +381,51 @@ describe("typed simulation core", () => {
     expect(metrics.totalPressure).toBeGreaterThanOrEqual(2.5);
     expect(metrics.totalResource).toBeGreaterThanOrEqual(0);
     expect(metrics.totalTrace).toBeGreaterThanOrEqual(0);
+  });
+
+  it("diffuses ecological pressure into neighboring cells without changing resources", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 5,
+      height: 5,
+      initialAgents: 0,
+      pressureDecay: 1,
+      pressureDiffusion: 0.2,
+      pressureGrowth: 0,
+      seed: 20260536
+    });
+    sim.pressure.fill(0);
+    sim.resources.fill(0);
+    const center = sim.index(2, 2);
+    const east = sim.index(3, 2);
+    sim.pressure[center] = 4;
+
+    sim.updateEnvironment();
+
+    expect(sim.pressure[center]).toBeLessThan(4);
+    expect(sim.pressure[east]).toBeGreaterThan(0);
+    expect(sim.metrics().totalPressure).toBeCloseTo(4, 5);
+    expect(sim.metrics().totalResource).toBe(0);
+  });
+
+  it("can disable pressure diffusion for isolated pressure tests", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 5,
+      height: 5,
+      initialAgents: 0,
+      pressureDecay: 1,
+      pressureDiffusion: 0,
+      pressureGrowth: 0,
+      seed: 20260537
+    });
+    sim.pressure.fill(0);
+    sim.pressure[sim.index(2, 2)] = 4;
+
+    sim.updateEnvironment();
+
+    expect(sim.pressure[sim.index(2, 2)]).toBe(4);
+    expect(sim.pressure[sim.index(3, 2)]).toBe(0);
   });
 
   it("assigns independent lineage ids to initial spawned agents", () => {
