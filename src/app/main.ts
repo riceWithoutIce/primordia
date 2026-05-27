@@ -164,7 +164,7 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 
 canvas.addEventListener("pointerleave", () => {
-  clearInspector();
+  // Keep the last inspected cell visible while the pointer moves to the panel.
 });
 
 function getElement<T extends HTMLElement>(id: string): T {
@@ -364,16 +364,9 @@ function updateInspector(event: PointerEvent): void {
   const cells = Math.max(1, chunk.width * chunk.height);
 
   inspector.cell.textContent = `${x},${y} ${cell.terrainType}`;
-  inspector.chunk.textContent = `#${chunk.id} ${chunk.activity} ${chunk.agentCount} agent ${formatTotal(chunk.summary.resource / cells)} res`;
-  inspector.region.textContent = `#${region.id} ${region.dominantBiome ?? "-"} ${region.chunkIds.length} chunks`;
-  inspector.field.textContent = `r ${cell.resource.toFixed(2)} t ${cell.trace.toFixed(2)} p ${cell.pressure.toFixed(2)}`;
-}
-
-function clearInspector(): void {
-  inspector.cell.textContent = "-";
-  inspector.chunk.textContent = "-";
-  inspector.region.textContent = "-";
-  inspector.field.textContent = "-";
+  inspector.field.textContent = `res ${cell.resource.toFixed(2)} / trace ${cell.trace.toFixed(2)} / pressure ${cell.pressure.toFixed(2)} / moisture ${cell.moistureDelta.toFixed(2)}`;
+  inspector.chunk.textContent = `#${chunk.id} ${chunk.activity} / agents ${chunk.agentCount} / avgRes ${formatTotal(chunk.summary.resource / cells)}`;
+  inspector.region.textContent = `#${region.id} ${region.dominantBiome ?? "-"} / ${region.chunkIds.length} chunks`;
 }
 
 function tickRate(): number {

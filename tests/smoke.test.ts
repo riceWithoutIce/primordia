@@ -91,6 +91,21 @@ describe("primordia simulation smoke", () => {
     for (const id of inspectIds) {
       expect(html).toContain(`id="${id}"`);
     }
+    expect(html).toContain("inspector-panel");
+    expect(html.indexOf("inspector-panel")).toBeLessThan(html.indexOf("panel-tools"));
+  });
+
+  it("keeps the panel organized into compact observable sections", () => {
+    const html = readFileSync("index.html", "utf8");
+    const sectionClasses = ["panel-top", "panel-inspector", "panel-tools", "panel-metrics", "metric-list", "metric-row"];
+
+    for (const className of sectionClasses) {
+      expect(html).toContain(className);
+    }
+    expect(html).toContain("<summary>Ecology</summary>");
+    expect(html).toContain("<summary>Lineage</summary>");
+    expect(html).toContain("<summary>Lifecycle</summary>");
+    expect(html).toContain("<summary>Organs</summary>");
   });
 
   it("keeps base map and overlay controls wired in the page shell", () => {

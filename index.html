@@ -12,100 +12,149 @@
       </section>
 
       <aside class="panel" aria-label="培养皿控制台">
-        <header>
-          <p class="eyebrow">primordia</p>
-          <h1>未形</h1>
-          <p class="subtitle">在信息环境中寻找生命的开始</p>
-        </header>
+        <section class="panel-top" aria-label="运行控制">
+          <header class="panel-title">
+            <p class="eyebrow">primordia</p>
+            <h1>未形</h1>
+          </header>
 
-        <div class="controls" aria-label="仿真控制">
-          <button id="toggle" type="button">暂停</button>
-          <button id="step" type="button">单步</button>
-          <button id="reset" type="button">重置</button>
-        </div>
+          <div class="controls" aria-label="仿真控制">
+            <button id="toggle" type="button">暂停</button>
+            <button id="step" type="button">单步</button>
+            <button id="reset" type="button">重置</button>
+          </div>
 
-        <div class="snapshot-controls" aria-label="实验快照">
-          <button id="snapshot" type="button">记录</button>
-          <button id="copy-snapshot" type="button" disabled>复制</button>
-          <button id="download-snapshot" type="button" disabled>下载</button>
-        </div>
-        <output id="snapshot-status" class="snapshot-status">未记录</output>
+          <label class="slider">
+            <span>速度 <output id="speed-label">16 tick/s</output></span>
+            <input id="speed" type="range" min="0" max="8" value="6">
+          </label>
+        </section>
 
-        <label class="slider">
-          <span>速度 <output id="speed-label">16 tick/s</output></span>
-          <input id="speed" type="range" min="0" max="8" value="6">
-        </label>
+        <section class="panel-section panel-inspector inspector-panel" aria-label="cell chunk region inspection">
+          <h2>Inspector</h2>
+          <dl class="inspector">
+            <div><dt>Cell</dt><dd id="inspect-cell">-</dd></div>
+            <div><dt>Field</dt><dd id="inspect-field">-</dd></div>
+            <div><dt>Chunk</dt><dd id="inspect-chunk">-</dd></div>
+            <div><dt>Region</dt><dd id="inspect-region">-</dd></div>
+          </dl>
+        </section>
 
-        <div class="map-controls" aria-label="map controls">
-          <fieldset class="layer-group">
-            <legend>Base</legend>
-            <div class="layer-options">
-              <button class="base-layer active" id="base-terrain" type="button" data-base-layer="terrain">terrain</button>
-              <button class="base-layer" id="base-biome" type="button" data-base-layer="biome">biome</button>
-              <button class="base-layer" id="base-resource" type="button" data-base-layer="resource">resource</button>
-              <button class="base-layer" id="base-pressure" type="button" data-base-layer="pressure">pressure</button>
-            </div>
-          </fieldset>
-          <fieldset class="layer-group">
-            <legend>Overlays</legend>
-            <div class="layer-options">
-              <label class="overlay-toggle"><input id="overlay-resources" type="checkbox" data-overlay="resources" checked> resources</label>
-              <label class="overlay-toggle"><input id="overlay-agents" type="checkbox" data-overlay="agents" checked> agents</label>
-              <label class="overlay-toggle"><input id="overlay-processes" type="checkbox" data-overlay="processes" checked> processes</label>
-              <label class="overlay-toggle"><input id="overlay-pressure" type="checkbox" data-overlay="pressure"> pressure</label>
-              <label class="overlay-toggle"><input id="overlay-lineages" type="checkbox" data-overlay="lineages"> lineages</label>
-            </div>
-          </fieldset>
-        </div>
+        <div class="panel-scroll">
+          <section class="panel-section panel-tools" aria-label="显示与快照工具">
+            <details>
+              <summary>Layers</summary>
+              <div class="map-controls" aria-label="map controls">
+                <fieldset class="layer-group">
+                  <legend>Base</legend>
+                  <div class="layer-options">
+                    <button class="base-layer active" id="base-terrain" type="button" data-base-layer="terrain">terrain</button>
+                    <button class="base-layer" id="base-biome" type="button" data-base-layer="biome">biome</button>
+                    <button class="base-layer" id="base-resource" type="button" data-base-layer="resource">resource</button>
+                    <button class="base-layer" id="base-pressure" type="button" data-base-layer="pressure">pressure</button>
+                  </div>
+                </fieldset>
+                <fieldset class="layer-group">
+                  <legend>Overlays</legend>
+                  <div class="layer-options">
+                    <label class="overlay-toggle"><input id="overlay-resources" type="checkbox" data-overlay="resources" checked> resources</label>
+                    <label class="overlay-toggle"><input id="overlay-agents" type="checkbox" data-overlay="agents" checked> agents</label>
+                    <label class="overlay-toggle"><input id="overlay-processes" type="checkbox" data-overlay="processes" checked> processes</label>
+                    <label class="overlay-toggle"><input id="overlay-pressure" type="checkbox" data-overlay="pressure"> pressure</label>
+                    <label class="overlay-toggle"><input id="overlay-lineages" type="checkbox" data-overlay="lineages"> lineages</label>
+                  </div>
+                </fieldset>
+              </div>
+            </details>
 
-        <dl class="metrics">
-          <div><dt>tick</dt><dd id="m-tick">0</dd></div>
-          <div><dt>seed</dt><dd id="m-seed">0</dd></div>
-          <div><dt>生命</dt><dd id="m-agents">0</dd></div>
-          <div><dt>活跃谱系</dt><dd id="m-lineages">0</dd></div>
-          <div><dt>总谱系</dt><dd id="m-lineages-total">0</dd></div>
-          <div><dt>灭绝谱系</dt><dd id="m-lineages-extinct">0</dd></div>
-          <div><dt>优势谱系</dt><dd id="m-dominant-lineage">-</dd></div>
-          <div><dt>优势占比</dt><dd id="m-dominant-share">0%</dd></div>
-          <div><dt>总资源</dt><dd id="m-resource">0</dd></div>
-          <div><dt>总痕迹</dt><dd id="m-trace">0</dd></div>
-          <div><dt>总压力</dt><dd id="m-pressure">0</dd></div>
-          <div><dt>事件</dt><dd id="m-events">0</dd></div>
-          <div><dt>最近事件</dt><dd id="m-last-event">-</dd></div>
-          <div><dt>环境过程</dt><dd id="m-processes">0</dd></div>
-          <div><dt>最近过程</dt><dd id="m-last-process">-</dd></div>
-          <div><dt>物种</dt><dd id="m-species">0</dd></div>
-          <div><dt>优势物种</dt><dd id="m-dominant-species">-</dd></div>
-          <div><dt>器官尝试</dt><dd id="m-organ-attempts">0</dd></div>
-          <div><dt>器官通过</dt><dd id="m-organ-accepted">0</dd></div>
-          <div><dt>器官拒绝</dt><dd id="m-organ-refused">0</dd></div>
-          <div><dt>器官预算</dt><dd id="m-organ-budget">0</dd></div>
-          <div><dt>主要拒因</dt><dd id="m-organ-refusal">-</dd></div>
-          <div><dt>chunks</dt><dd id="m-chunks">0</dd></div>
-          <div><dt>活/温/眠</dt><dd id="m-chunk-states">0/0/0</dd></div>
-          <div><dt>更新块/格</dt><dd id="m-updated-chunks">0/0</dd></div>
-          <div><dt>regions</dt><dd id="m-regions">0</dd></div>
-          <div><dt>湿度脉冲</dt><dd id="m-moisture">0</dd></div>
-          <div><dt>平均能量</dt><dd id="m-energy">0</dd></div>
-          <div><dt>最高世代</dt><dd id="m-generation">0</dd></div>
-          <div><dt>出生</dt><dd id="m-births">0</dd></div>
-          <div><dt>死亡</dt><dd id="m-deaths">0</dd></div>
-          <div><dt>饥饿</dt><dd id="m-death-starvation">0</dd></div>
-          <div><dt>压力</dt><dd id="m-death-pressure">0</dd></div>
-          <div><dt>溢出</dt><dd id="m-death-overflow">0</dd></div>
-        </dl>
+            <details>
+              <summary>Snapshot</summary>
+              <div class="snapshot-controls" aria-label="实验快照">
+                <button id="snapshot" type="button">记录</button>
+                <button id="copy-snapshot" type="button" disabled>复制</button>
+                <button id="download-snapshot" type="button" disabled>下载</button>
+              </div>
+              <output id="snapshot-status" class="snapshot-status">未记录</output>
+            </details>
+          </section>
 
-        <dl class="inspector" aria-label="cell chunk region inspection">
-          <div><dt>cell</dt><dd id="inspect-cell">-</dd></div>
-          <div><dt>chunk</dt><dd id="inspect-chunk">-</dd></div>
-          <div><dt>region</dt><dd id="inspect-region">-</dd></div>
-          <div><dt>field</dt><dd id="inspect-field">-</dd></div>
-        </dl>
+          <section class="panel-section panel-metrics" aria-label="培养皿指标">
+            <section class="metric-group" aria-label="Overview">
+              <h2>Overview</h2>
+              <dl class="metric-list">
+                <div class="metric-row"><dt>tick</dt><dd id="m-tick">0</dd></div>
+                <div class="metric-row"><dt>seed</dt><dd id="m-seed">0</dd></div>
+                <div class="metric-row"><dt>生命</dt><dd id="m-agents">0</dd></div>
+                <div class="metric-row"><dt>平均能量</dt><dd id="m-energy">0</dd></div>
+                <div class="metric-row"><dt>最高世代</dt><dd id="m-generation">0</dd></div>
+              </dl>
+            </section>
 
-        <div class="legend" aria-label="图例">
-          <span><i class="resource"></i>资源</span>
-          <span><i class="trace"></i>痕迹</span>
-          <span><i class="agent"></i>生命</span>
+            <section class="metric-group" aria-label="Scheduler">
+              <h2>Scheduler</h2>
+              <dl class="metric-list">
+                <div class="metric-row"><dt>chunks</dt><dd id="m-chunks">0</dd></div>
+                <div class="metric-row"><dt>活/温/眠</dt><dd id="m-chunk-states">0/0/0</dd></div>
+                <div class="metric-row"><dt>更新块/格</dt><dd id="m-updated-chunks">0/0</dd></div>
+                <div class="metric-row"><dt>regions</dt><dd id="m-regions">0</dd></div>
+              </dl>
+            </section>
+
+            <details class="metric-group">
+              <summary>Ecology</summary>
+              <dl class="metric-list">
+                <div class="metric-row"><dt>总资源</dt><dd id="m-resource">0</dd></div>
+                <div class="metric-row"><dt>总痕迹</dt><dd id="m-trace">0</dd></div>
+                <div class="metric-row"><dt>总压力</dt><dd id="m-pressure">0</dd></div>
+                <div class="metric-row"><dt>湿度脉冲</dt><dd id="m-moisture">0</dd></div>
+                <div class="metric-row"><dt>事件</dt><dd id="m-events">0</dd></div>
+                <div class="metric-row"><dt>最近事件</dt><dd id="m-last-event">-</dd></div>
+                <div class="metric-row"><dt>环境过程</dt><dd id="m-processes">0</dd></div>
+                <div class="metric-row"><dt>最近过程</dt><dd id="m-last-process">-</dd></div>
+              </dl>
+            </details>
+
+            <details class="metric-group">
+              <summary>Lineage</summary>
+              <dl class="metric-list">
+                <div class="metric-row"><dt>活跃谱系</dt><dd id="m-lineages">0</dd></div>
+                <div class="metric-row"><dt>总谱系</dt><dd id="m-lineages-total">0</dd></div>
+                <div class="metric-row"><dt>灭绝谱系</dt><dd id="m-lineages-extinct">0</dd></div>
+                <div class="metric-row"><dt>优势谱系</dt><dd id="m-dominant-lineage">-</dd></div>
+                <div class="metric-row"><dt>优势占比</dt><dd id="m-dominant-share">0%</dd></div>
+                <div class="metric-row"><dt>物种</dt><dd id="m-species">0</dd></div>
+                <div class="metric-row"><dt>优势物种</dt><dd id="m-dominant-species">-</dd></div>
+              </dl>
+            </details>
+
+            <details class="metric-group">
+              <summary>Lifecycle</summary>
+              <dl class="metric-list">
+                <div class="metric-row"><dt>出生</dt><dd id="m-births">0</dd></div>
+                <div class="metric-row"><dt>死亡</dt><dd id="m-deaths">0</dd></div>
+                <div class="metric-row"><dt>饥饿</dt><dd id="m-death-starvation">0</dd></div>
+                <div class="metric-row"><dt>压力</dt><dd id="m-death-pressure">0</dd></div>
+                <div class="metric-row"><dt>溢出</dt><dd id="m-death-overflow">0</dd></div>
+              </dl>
+            </details>
+
+            <details class="metric-group">
+              <summary>Organs</summary>
+              <dl class="metric-list">
+                <div class="metric-row"><dt>器官尝试</dt><dd id="m-organ-attempts">0</dd></div>
+                <div class="metric-row"><dt>器官通过</dt><dd id="m-organ-accepted">0</dd></div>
+                <div class="metric-row"><dt>器官拒绝</dt><dd id="m-organ-refused">0</dd></div>
+                <div class="metric-row"><dt>器官预算</dt><dd id="m-organ-budget">0</dd></div>
+                <div class="metric-row"><dt>主要拒因</dt><dd id="m-organ-refusal">-</dd></div>
+              </dl>
+            </details>
+          </section>
+
+          <div class="legend" aria-label="图例">
+            <span><i class="resource"></i>资源</span>
+            <span><i class="trace"></i>痕迹</span>
+            <span><i class="agent"></i>生命</span>
+          </div>
         </div>
       </aside>
     </main>
