@@ -23,10 +23,31 @@ export {
   temperatureAt
 } from "./world/terrain";
 export { createWorld, environmentAt, terrainAt, worldIndex } from "./world/world";
+export {
+  CHUNK_DIRTY,
+  chunkIdForCell,
+  chunkIdForIndex,
+  clearChunkProjectionDirty,
+  countChunkActivities,
+  createChunkGrid,
+  createRegionGraph,
+  markChunkProjectionDirty,
+  markChunkSummaryDirty,
+  touchArea,
+  touchCell,
+  touchChunk
+} from "./world/chunks";
 export { Simulation } from "./sim/simulation";
 export type {
   Agent,
   AgentAction,
+  AgentIntention,
+  ChunkActivity,
+  ChunkBounds,
+  ChunkGrid,
+  ChunkRecord,
+  ChunkSchedulerStats,
+  ChunkSummary,
   DeathReason,
   DeathStats,
   DynamicFields,
@@ -46,13 +67,18 @@ export type {
   Metrics,
   MoveVector,
   RandomSource,
+  RegionGraph,
+  RegionSummary,
   SimulationConfig,
   SimulationConfigPatch,
   SnapshotAgent,
   SnapshotCellSample,
+  SnapshotChunkSummary,
   SnapshotEnvironmentSummary,
   SnapshotLineageSummary,
   SnapshotOrganSummary,
+  SnapshotRegionSummary,
+  SnapshotSchedulerSummary,
   SnapshotSpeciesSummary,
   SnapshotWorldSummary,
   SpeciesFateMetrics,

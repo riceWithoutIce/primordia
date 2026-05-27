@@ -81,14 +81,106 @@ describe("typed simulation core", () => {
     expect(sim.agents).toHaveLength(0);
   });
 
-  it("uses a large world as the Phase 2.2 default", () => {
+  it("uses a 960 by 640 world as the Phase 2.3 default", () => {
     const sim = new Simulation({ initialAgents: 0 });
 
-    expect(DEFAULTS.width).toBe(256);
-    expect(DEFAULTS.height).toBe(160);
-    expect(sim.width).toBe(256);
-    expect(sim.height).toBe(160);
-    expect(sim.size).toBe(40960);
+    expect(DEFAULTS.width).toBe(960);
+    expect(DEFAULTS.height).toBe(640);
+    expect(sim.width).toBe(960);
+    expect(sim.height).toBe(640);
+    expect(sim.size).toBe(614400);
+    expect(sim.world.chunks.columns).toBe(30);
+    expect(sim.world.chunks.rows).toBe(20);
+  }, 15000);
+
+  it("partitions worlds into deterministic chunks and regions", () => {
+    const sim = new Simulation({
+      width: 96,
+      height: 64,
+      chunkSize: 32,
+      initialAgents: 0,
+      seed: 20260608
+    });
+
+    expect(sim.world.chunks.columns).toBe(3);
+    expect(sim.world.chunks.rows).toBe(2);
+    expect(sim.world.chunks.chunks).toHaveLength(6);
+    expect(sim.world.chunks.cellToChunk[0]).toBe(0);
+    expect(sim.world.chunks.cellToChunk[31]).toBe(0);
+    expect(sim.world.chunks.cellToChunk[32]).toBe(1);
+    expect(sim.world.regions.regions.length).toBeGreaterThan(0);
+    expect(sim.snapshot({ includeAllChunks: true }).chunks).toHaveLength(6);
+  });
+
+  it("keeps large untouched chunks sleeping until their deterministic phase", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 320,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 0,
+      resourceGrowth: 1,
+      pressureDiffusion: 0,
+      sleepingChunkInterval: 8,
+      seed: 20260610
+    });
+
+    sim.step(1);
+    const first = sim.metrics();
+    expect(first.updatedChunks).toBe(0);
+    expect(first.sleepingChunks).toBe(sim.world.chunks.chunks.length);
+
+    sim.step(7);
+    const phased = sim.metrics();
+    expect(phased.updatedChunks).toBeGreaterThan(0);
+    expect(phased.updatedChunks).toBeLessThan(sim.world.chunks.chunks.length);
+    expect(sim.world.chunks.schedulerStats.catchUpFieldUpdates).toBe(phased.updatedChunks);
+  });
+
+  it("marks lazily updated sleeping chunks dirty for projection refresh", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 320,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 0,
+      resourceGrowth: 1,
+      pressureDiffusion: 0,
+      sleepingChunkInterval: 8,
+      seed: 20260613
+    });
+    for (const chunk of sim.world.chunks.chunks) {
+      chunk.projectionDirty = false;
+    }
+
+    sim.step(8);
+    const updatedProjectionChunks = sim.world.chunks.chunks.filter((chunk) => chunk.projectionDirty);
+
+    expect(sim.metrics().updatedChunks).toBeGreaterThan(0);
+    expect(updatedProjectionChunks).toHaveLength(sim.metrics().updatedChunks);
+  });
+
+  it("uses coordinate-derived field randomness for lazy large-world catch-up", () => {
+    const config: SimulationConfigPatch = {
+      environmentMode: "flux",
+      width: 320,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 0,
+      resourceGrowth: 1,
+      pressureDiffusion: 0,
+      sleepingChunkInterval: 8,
+      seed: 20260611
+    };
+    const first = new Simulation(config);
+    const replay = new Simulation(config);
+
+    first.step(24);
+    replay.step(24);
+
+    expect(Array.from(replay.resources)).toEqual(Array.from(first.resources));
+    expect(replay.metrics().updatedChunks).toBe(first.metrics().updatedChunks);
+    expect(replay.snapshot({ environmentSampleStride: 64 })).toEqual(first.snapshot({ environmentSampleStride: 64 }));
   });
 
   it("exposes environment cells as typed wrapped-coordinate snapshots", () => {
@@ -607,13 +699,23 @@ describe("typed simulation core", () => {
 
     expect(snapshot).toEqual(replay.snapshot({ environmentSampleStride: 4 }));
     expect(snapshot.kind).toBe("primordia.experiment-snapshot");
-    expect(snapshot.schemaVersion).toBe(2);
+    expect(snapshot.schemaVersion).toBe(3);
     expect(snapshot.id).toContain("seed-20260543-tick-24");
     expect(snapshot.config).toEqual(first.config);
     expect(snapshot.metrics).toEqual(first.metrics());
     expect(snapshot.world.width).toBe(first.width);
     expect(snapshot.world.biomeCounts).toEqual(first.metrics().biomeCounts);
+    expect(snapshot.scheduler.chunkSize).toBe(first.config.chunkSize);
+    expect(snapshot.scheduler.totalChunks).toBe(first.world.chunks.chunks.length);
+    expect(snapshot.chunks.length).toBeGreaterThan(0);
+    expect(snapshot.regions.length).toBe(first.world.regions.regions.length);
+    expect(snapshot.chunks[0]).toMatchObject({
+      id: 0,
+      regionId: expect.any(Number),
+      activity: expect.any(String)
+    });
     expect(snapshot.agents).toHaveLength(first.agents.length);
+    expect(snapshot.agents[0]?.intention).toBeDefined();
     expect(snapshot.lineages).toHaveLength(first.metrics().lineageFate.total);
     expect(snapshot.species).toHaveLength(first.metrics().speciesFate.total);
     expect(snapshot.environment.sampleStride).toBe(4);
@@ -625,6 +727,21 @@ describe("typed simulation core", () => {
     expect(snapshot.environment.averageResource).toBeGreaterThanOrEqual(0);
     expect(snapshot.environment.barrierCells).toBeGreaterThanOrEqual(0);
     expect(snapshot.environment.samples[0].terrainType).toBeDefined();
+  });
+
+  it("keeps reset-time region summaries aligned with spawned agents", () => {
+    const sim = new Simulation({
+      width: 96,
+      height: 64,
+      chunkSize: 32,
+      initialAgents: 8,
+      seed: 20260614
+    });
+    const snapshot = sim.snapshot({ includeAllChunks: true });
+    const regionAgents = snapshot.regions.reduce((total, region) => total + region.agentCount, 0);
+
+    expect(regionAgents).toBe(sim.agents.length);
+    expect(snapshot.chunks.reduce((total, chunk) => total + chunk.agentCount, 0)).toBe(sim.agents.length);
   });
 
   it("lets snapshot sampling density be configured without mutating the simulation", () => {
@@ -766,6 +883,68 @@ describe("typed simulation core", () => {
     expect(sim.pressure[east]).toBeGreaterThan(0);
     expect(sim.metrics().totalPressure).toBeCloseTo(4, 5);
     expect(sim.metrics().totalResource).toBe(0);
+  });
+
+  it("diffuses large-world pressure across chunk borders without waking quiet neighbors", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 320,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 0,
+      pressureDecay: 1,
+      pressureDiffusion: 0.2,
+      pressureGrowth: 0,
+      seed: 20260612
+    });
+    sim.pressure.fill(0);
+    const border = sim.index(31, 40);
+    const neighbor = sim.index(32, 40);
+    sim.pressure[border] = 4;
+    const leftChunk = sim.world.chunks.chunks[sim.world.chunks.cellToChunk[border]];
+    const rightChunk = sim.world.chunks.chunks[sim.world.chunks.cellToChunk[neighbor]];
+    leftChunk.activity = "active";
+    leftChunk.lastTouchedTick = 1;
+    rightChunk.activity = "sleeping";
+    rightChunk.lastTouchedTick = 0;
+
+    sim.diffusePressure();
+
+    expect(sim.pressure[neighbor]).toBeGreaterThan(0);
+    expect(rightChunk.activity).toBe("sleeping");
+    expect(rightChunk.dirtyMask).toBe(0);
+    expect(rightChunk.projectionDirty).toBe(true);
+    expect(rightChunk.summary.pressure).toBeGreaterThan(0);
+  });
+
+  it("does not pull pressure one way from chunks outside the diffusion set", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 320,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 0,
+      pressureDecay: 1,
+      pressureDiffusion: 0.2,
+      pressureGrowth: 0,
+      seed: 20260615
+    });
+    sim.pressure.fill(0);
+    const selectedEdge = sim.index(0, 16);
+    const outsideEdge = sim.index(319, 16);
+    sim.pressure[outsideEdge] = 4;
+    for (const chunk of sim.world.chunks.chunks) {
+      chunk.activity = "sleeping";
+      chunk.dirtyMask = 0;
+    }
+    sim.world.chunks.chunks[1].activity = "active";
+
+    sim.diffusePressure();
+
+    const rawPressure = Array.from(sim.pressure).reduce((total, value) => total + value, 0);
+    expect(sim.pressure[selectedEdge]).toBe(0);
+    expect(sim.pressure[outsideEdge]).toBe(4);
+    expect(rawPressure).toBeCloseTo(4, 5);
   });
 
   it("can disable pressure diffusion for isolated pressure tests", () => {
@@ -1081,6 +1260,34 @@ describe("typed simulation core", () => {
     expect(agent.speciesId).not.toBe(agent.lineageId);
     expect(sim.metrics().speciesFate.total).toBe(1);
     expect(sim.snapshot().species[0].speciesId).toBe(agent.speciesId);
+  });
+
+  it("updates agent intentions at a lower decision cadence", () => {
+    const sim = new Simulation({
+      environmentMode: "closed",
+      width: 8,
+      height: 8,
+      initialAgents: 0,
+      barrierThreshold: 1.01,
+      agentDecisionInterval: 3,
+      seed: 20260609
+    });
+    const agent = sim.spawnAgent(
+      2,
+      2,
+      testGenome({
+        pressureAversion: GENOME_BOUNDS.pressureAversion.max,
+        riskTolerance: GENOME_BOUNDS.riskTolerance.min,
+        moveCost: 0
+      }),
+      20
+    );
+    sim.pressure[sim.index(2, 2)] = 4;
+
+    sim.step(1);
+
+    expect(agent.intention).toBe("escape-pressure");
+    expect(agent.nextDecisionTick).toBeGreaterThan(sim.metrics().tick);
   });
 
   it("models Phase 3 organ actions without host capabilities", () => {

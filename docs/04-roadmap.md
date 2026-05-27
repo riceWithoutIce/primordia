@@ -62,7 +62,9 @@
 - 验收记录见 [Phase 2 Acceptance Review](05-phase-two-acceptance.md)。
 - Phase 2.2 已完成并验收：世界化环境、地形/生态位、连续环境过程、行为分化、species/clade 指标、base map + overlays 可视化和大世界性能基线均已完成。
 - 验收记录见 [Phase 2.2 Acceptance Review](06-phase-two-two-acceptance.md)。
-- 下一步进入 Phase 3：行为器官与工具边界。Phase 3 实施前需要重新审核工具白名单、审计、预算、拒绝机制和不可进化层。
+- Phase 2.3 large-world simulation framework 已完成当前验收：`960 x 640` 默认世界、chunk/region/scheduler、deterministic lazy update、chunk-aware pressure diffusion、snapshot v3、projection cache 和 Canvas 2D 观察已落地，热运行达到约 `16 tick/s`。
+- 验收记录见 [Phase 2.3 Acceptance Review](10-phase-two-three-progress.md)。
+- Phase 3 已完成并验收；Phase 2.3 现在作为大世界基础设施继续推进。
 
 ## Phase 2.2：世界化环境与分化生态
 

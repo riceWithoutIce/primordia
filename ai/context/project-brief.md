@@ -21,7 +21,7 @@
 
 ## 当前阶段
 
-Phase 2.2：世界化环境与分化生态已完成验收，下一步进入 Phase 3 行为器官与工具边界的安全设计与任务拆分。
+Phase 2.2：世界化环境与分化生态已完成验收。Phase 3 行为器官与工具边界已完成验收。Phase 2.3 大世界仿真框架已完成当前验收。
 
 - 项目起源已经沉积到 `docs/origin.md`。
 - 基础文档结构已经建立。
@@ -51,6 +51,7 @@ Phase 2.2：世界化环境与分化生态已完成验收，下一步进入 Phas
 - 2026-05-26：Phase 2.10 验收已完成：详见 `docs/05-phase-two-acceptance.md`。Phase 2 当前任务定义下通过，暂不追加环境事件细化等临时任务。
 - 2026-05-26：Phase 2.2 已完成：core 拆分为 config/random/world/life/sim，默认世界扩大到 `256 x 160`，新增 `WorldState`、terrain/biome、动态 fields、moisture-front 环境过程、行为 genome traits、species/clade 指标、snapshot schema v2、terrain base map + overlays 可视化，以及大世界性能基线优化；详见 `docs/06-phase-two-two-acceptance.md`。
 - 2026-05-26：Phase 3 已完成并验收：新增 `docs/07-phase-three-organ-boundaries.md` 和 `docs/08-phase-three-acceptance.md`；实现 typed organ actions、预算/拒绝/审计、首个 `trace-mark` 内部器官原型、`organAffinity` / `organStability` genome traits、生态代价、snapshot 和 UI 观测指标。行为器官仍只能是本地模拟数据变换，不能接触真实网络、文件系统、shell、token、凭证、外部 API 或浏览器权限。
+- 2026-05-27：Phase 2.3 大世界仿真框架已完成当前验收：`docs/09-large-world-architecture.md` 和 `docs/10-phase-two-three-progress.md` 记录架构与验收；默认世界为 `960 x 640`，加入 `32 x 32` chunks、region graph、scheduler stats、deterministic lazy field updates、chunk-aware pressure diffusion、agent intentions、snapshot schema v3、projection cache 和 cell/chunk/region inspector；`npm run check`、`npm run build`、`npm run bench:core` 通过，最新热运行 `step(16)` 约 `1107.12ms`，浏览器观察约 `19.3 tick/s`。
 
 ## 当前优先级
 
@@ -58,7 +59,7 @@ Phase 2.2：世界化环境与分化生态已完成验收，下一步进入 Phas
 2. 让培养皿稳定、可观察、可暂停、可重置。
 3. 让生命感先于智能感出现。
 4. 记录实验参数和观察结果。
-5. 进入 Phase 3 时，先完成行为器官和工具边界的安全设计，再实现任何模拟工具系统。
+5. Phase 2.3 后续可继续优化初始化、chunk-local field storage、边界 strip buffer 和更深的 zoom/LOD 观察；当前验收不引入任何真实网络、文件、shell、token、凭证或外部 API 能力。
 
 ## 未来研究线
 

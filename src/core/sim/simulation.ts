@@ -15,8 +15,15 @@ import {
 import { shouldUpdateSpecies, speciesForGenome } from "../life/species";
 import { clamp, mulberry32 } from "../random/rng";
 import {
+  CHUNK_DIRTY,
+  chunkIdForIndex,
+  recordAgentChunk,
+  refreshDirtyRegionSummaries,
+  resetChunkAgentCounts,
+  touchCell
+} from "../world/chunks";
+import {
   barrierFor,
-  biomeCountsFor,
   emptyBiomeCounts,
   isBarrierAt,
   movementCostAt,
@@ -27,6 +34,7 @@ import { updateWorld, diffusePressure, updateEnvironmentFields } from "../world/
 import { createWorld, environmentAt, worldIndex } from "../world/world";
 import type {
   Agent,
+  AgentIntention,
   DeathReason,
   DeathStats,
   EnvironmentCell,
@@ -41,9 +49,12 @@ import type {
   RandomSource,
   SimulationConfig,
   SimulationConfigPatch,
+  SnapshotChunkSummary,
   SnapshotEnvironmentSummary,
   SnapshotLineageSummary,
   SnapshotOrganSummary,
+  SnapshotRegionSummary,
+  SnapshotSchedulerSummary,
   SnapshotSpeciesSummary,
   SnapshotWorldSummary,
   TerrainType,
@@ -161,6 +172,7 @@ export class Simulation {
         0
       );
     }
+    this.refreshAgentChunkCounts();
   }
 
   index(x: number, y: number): number {
@@ -195,6 +207,8 @@ export class Simulation {
       age: 0,
       generation,
       genome: boundedGenome,
+      intention: "forage",
+      nextDecisionTick: this.tickCount,
       lastAction: "born",
       lastMove: { dx: 0, dy: 0 },
       stuckTicks: 0,
@@ -203,6 +217,7 @@ export class Simulation {
     this.nextAgentId += 1;
     this.agents.push(agent);
     this.births += 1;
+    recordAgentChunk(this.world.chunks, this.width, this.height, agent.x, agent.y, this.tickCount);
     return agent;
   }
 
@@ -285,6 +300,8 @@ export class Simulation {
         this.handleAgentDeath(agent, "overflow");
       }
     }
+
+    this.refreshAgentChunkCounts();
   }
 
   attemptOrganAction(request: OrganActionRequest): OrganActionOutcome {
@@ -391,10 +408,11 @@ export class Simulation {
     const pressureAmount = clamp(0.05 + outcome.cost.pressure + radius * 0.03, 0, 0.4);
     this.traces[idx] = clamp(this.traces[idx] + traceAmount, 0, 12);
     this.pressure[idx] = clamp(this.pressure[idx] + pressureAmount, 0, 4);
+    touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure);
   }
 
   updateEnvironment(): void {
-    updateEnvironmentFields(this.world, this.config, this.random);
+    updateEnvironmentFields(this.world, this.config, this.tickCount, this.random);
   }
 
   maybeTriggerEnvironmentalEvent(): void {
@@ -425,6 +443,7 @@ export class Simulation {
     }
 
     const before = { x: agent.x, y: agent.y };
+    this.updateAgentIntention(agent);
     const move = this.chooseMove(agent);
     this.moveAgent(agent, move);
     if (agent.x === before.x && agent.y === before.y && (move.dx !== 0 || move.dy !== 0)) {
@@ -464,10 +483,12 @@ export class Simulation {
   }
 
   moveAgent(agent: Agent, move: MoveVector): void {
+    const from = this.index(agent.x, agent.y);
     const targetX = (agent.x + move.dx + this.width) % this.width;
     const targetY = (agent.y + move.dy + this.height) % this.height;
     if (this.isBarrier(targetX, targetY)) {
       agent.stuckTicks += 1;
+      touchCell(this.world.chunks, from, this.tickCount, CHUNK_DIRTY.agents);
       return;
     }
 
@@ -477,6 +498,8 @@ export class Simulation {
     const distance = Math.abs(move.dx) + Math.abs(move.dy);
     const terrainCost = this.world.terrain.movementCost[this.index(targetX, targetY)];
     agent.energy -= agent.genome.moveCost * distance * terrainCost;
+    touchCell(this.world.chunks, from, this.tickCount, CHUNK_DIRTY.agents);
+    touchCell(this.world.chunks, this.index(targetX, targetY), this.tickCount, CHUNK_DIRTY.agents);
   }
 
   harvestAgent(agent: Agent): number {
@@ -487,12 +510,14 @@ export class Simulation {
     this.resources[idx] -= harvested;
     agent.energy += harvested;
     this.pressure[idx] = clamp(this.pressure[idx] + harvestPressure(agent.genome, harvested), 0, 4);
+    touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.resource | CHUNK_DIRTY.pressure);
     return harvested;
   }
 
   leaveTrace(agent: Agent, harvested: number): void {
     const idx = this.index(agent.x, agent.y);
     this.traces[idx] = clamp(this.traces[idx] + 0.5 + harvested * 0.09, 0, 12);
+    touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.trace);
     if (agent.energy <= 0) {
       this.markDeath(agent, "starvation");
     }
@@ -529,6 +554,7 @@ export class Simulation {
     this.resources[idx] = clamp(this.resources[idx] + resourceResidue, 0, this.config.resourceCap);
     this.traces[idx] = clamp(this.traces[idx] + traceResidue, 0, 12);
     this.pressure[idx] = clamp(this.pressure[idx] + pressureResidue, 0, 4);
+    touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure);
   }
 
   chooseMove(agent: Agent): MoveVector {
@@ -542,7 +568,7 @@ export class Simulation {
         continue;
       }
       const score =
-        this.scoreArea(targetX, targetY, agent.genome) +
+        this.scoreArea(targetX, targetY, agent.genome, agent.intention) +
         this.inertiaScore(agent, move) +
         this.stuckRecoveryScore(agent, move) +
         this.random() * (0.12 + agent.genome.explorationBias * 0.55);
@@ -554,9 +580,13 @@ export class Simulation {
     return best;
   }
 
-  scoreArea(cx: number, cy: number, genome: Genome): number {
+  scoreArea(cx: number, cy: number, genome: Genome, intention: AgentIntention = "forage"): number {
     let score = 0;
     const radius = genome.senseRadius;
+    const resourceWeight = intention === "forage" ? 1.35 : intention === "escape-pressure" ? 0.82 : 1;
+    const traceWeight = intention === "follow-trace" ? 1.55 : 1;
+    const pressureWeight = intention === "escape-pressure" ? 1.55 : intention === "migrate" ? 0.86 : 1;
+    const terrainWeight = intention === "migrate" || intention === "explore-edge" ? 0.68 : 1;
     for (let y = -radius; y <= radius; y += 1) {
       for (let x = -radius; x <= radius; x += 1) {
         const distance = Math.abs(x) + Math.abs(y) + 1;
@@ -567,12 +597,22 @@ export class Simulation {
         }
         const movement = this.world.terrain.movementCost[idx] - 1;
         const pressurePenalty = this.pressure[idx] * (0.18 + genome.pressureAversion * 0.22 - genome.riskTolerance * 0.1);
-        score += (this.resources[idx] * genome.resourceAffinity) / distance;
-        score += (this.traces[idx] * genome.traceAffinity) / distance;
-        score -= pressurePenalty;
-        score -= movement * (0.42 - genome.terrainAffinity * 0.16);
+        score += (this.resources[idx] * genome.resourceAffinity * resourceWeight) / distance;
+        score += (this.traces[idx] * genome.traceAffinity * traceWeight) / distance;
+        score -= pressurePenalty * pressureWeight;
+        score -= movement * terrainWeight * (0.42 - genome.terrainAffinity * 0.16);
         score += this.world.fields.moistureDelta[idx] * 0.12;
       }
+    }
+    const centerIdx = this.index(cx, cy);
+    const chunk = this.world.chunks.chunks[chunkIdForIndex(this.world.chunks, centerIdx)];
+    const chunkCells = Math.max(1, chunk.width * chunk.height);
+    const region = this.world.regions.regions[chunk.regionId];
+    score += (chunk.summary.resource / chunkCells) * genome.resourceAffinity * 0.08;
+    score -= (chunk.summary.pressure / chunkCells) * (0.05 + genome.pressureAversion * 0.04);
+    if (region) {
+      score += region.averageFertility * (intention === "migrate" ? 0.28 : 0.12);
+      score -= region.barrierRatio * (intention === "migrate" ? 0.5 : 0.22);
     }
     return score;
   }
@@ -594,6 +634,7 @@ export class Simulation {
 
     this.traces[idx] = clamp(this.traces[idx] + reproductionWaste * 0.02, 0, 12);
     this.pressure[idx] = clamp(this.pressure[idx] + reproductionWaste * 0.006, 0, 4);
+    touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure | CHUNK_DIRTY.agents);
 
     parent.lastAction = "divide";
     this.knownSpecies.add(speciesId);
@@ -606,6 +647,8 @@ export class Simulation {
       age: 0,
       generation: parent.generation + 1,
       genome: childGenome,
+      intention: "forage",
+      nextDecisionTick: this.tickCount + Math.max(1, Math.floor(this.config.agentDecisionInterval)),
       lastAction: "born",
       lastMove: { dx: 0, dy: 0 },
       stuckTicks: 0,
@@ -617,12 +660,15 @@ export class Simulation {
     const metrics = this.metrics();
     return {
       kind: "primordia.experiment-snapshot",
-      schemaVersion: 2,
+      schemaVersion: 3,
       id: `seed-${this.config.seed}-tick-${this.tickCount}-agents-${this.agents.length}-events-${this.eventCount}-processes-${metrics.processCount}`,
       tick: this.tickCount,
       config: { ...this.config },
       metrics,
       world: this.snapshotWorld(metrics),
+      scheduler: this.snapshotScheduler(),
+      chunks: this.snapshotChunks(options),
+      regions: this.snapshotRegions(),
       lineages: this.snapshotLineages(),
       species: this.snapshotSpecies(),
       organs: this.snapshotOrgans(),
@@ -637,6 +683,7 @@ export class Simulation {
         age: agent.age,
         generation: agent.generation,
         lastAction: agent.lastAction,
+        intention: agent.intention,
         lastBiome: agent.lastBiome,
         genome: cloneGenome(agent.genome)
       }))
@@ -737,91 +784,128 @@ export class Simulation {
     const requestedStride = options.environmentSampleStride ?? 12;
     const sampleStride = Math.max(1, Math.floor(requestedStride));
     const samples = [];
-    let barrierCells = 0;
     let resourceHotspots = 0;
     let pressureHotspots = 0;
-    let totalResource = 0;
-    let totalTrace = 0;
-    let totalPressure = 0;
-    let totalMoistureDelta = 0;
-    let totalFertility = 0;
-    let totalMovementCost = 0;
 
-    for (let y = 0; y < this.height; y += 1) {
-      for (let x = 0; x < this.width; x += 1) {
-        const idx = this.index(x, y);
-        const cell = this.environmentAt(idx);
-
-        totalResource += cell.resource;
-        totalTrace += cell.trace;
-        totalPressure += cell.pressure;
-        totalMoistureDelta += cell.moistureDelta;
-        totalFertility += cell.fertility;
-        totalMovementCost += cell.movementCost;
-        if (cell.barrier) {
-          barrierCells += 1;
-        }
-        if (this.config.resourceCap > 0 && cell.resource >= this.config.resourceCap * 0.75) {
-          resourceHotspots += 1;
-        }
-        if (cell.pressure >= 2) {
-          pressureHotspots += 1;
-        }
-        if (x % sampleStride === 0 && y % sampleStride === 0) {
-          samples.push({
-            x,
-            y,
-            resource: roundSnapshotValue(cell.resource),
-            fertility: roundSnapshotValue(cell.fertility),
-            movementCost: roundSnapshotValue(cell.movementCost),
-            barrier: cell.barrier,
-            trace: roundSnapshotValue(cell.trace),
-            pressure: roundSnapshotValue(cell.pressure),
-            moistureDelta: roundSnapshotValue(cell.moistureDelta),
-            elevation: roundSnapshotValue(cell.elevation),
-            moistureBase: roundSnapshotValue(cell.moistureBase),
-            temperatureBase: roundSnapshotValue(cell.temperatureBase),
-            terrainType: cell.terrainType
-          });
-        }
+    for (const chunk of this.world.chunks.chunks) {
+      const cells = Math.max(1, chunk.width * chunk.height);
+      if (this.config.resourceCap > 0 && chunk.summary.resource / cells >= this.config.resourceCap * 0.75) {
+        resourceHotspots += cells;
+      }
+      if (chunk.summary.pressure / cells >= 2) {
+        pressureHotspots += cells;
       }
     }
 
+    for (let y = 0; y < this.height; y += sampleStride) {
+      for (let x = 0; x < this.width; x += sampleStride) {
+        const idx = this.index(x, y);
+        const cell = this.environmentAt(idx);
+        samples.push({
+          x,
+          y,
+          resource: roundSnapshotValue(cell.resource),
+          fertility: roundSnapshotValue(cell.fertility),
+          movementCost: roundSnapshotValue(cell.movementCost),
+          barrier: cell.barrier,
+          trace: roundSnapshotValue(cell.trace),
+          pressure: roundSnapshotValue(cell.pressure),
+          moistureDelta: roundSnapshotValue(cell.moistureDelta),
+          elevation: roundSnapshotValue(cell.elevation),
+          moistureBase: roundSnapshotValue(cell.moistureBase),
+          temperatureBase: roundSnapshotValue(cell.temperatureBase),
+          terrainType: cell.terrainType
+        });
+      }
+    }
+
+    const totals = this.environmentTotalsFromChunks();
     return {
       sampleStride,
       sampledCells: samples.length,
-      barrierCells,
+      barrierCells: totals.barrierCells,
       resourceHotspots,
       pressureHotspots,
-      averageResource: roundSnapshotValue(totalResource / this.size),
-      averageTrace: roundSnapshotValue(totalTrace / this.size),
-      averagePressure: roundSnapshotValue(totalPressure / this.size),
-      averageMoistureDelta: roundSnapshotValue(totalMoistureDelta / this.size),
-      averageFertility: roundSnapshotValue(totalFertility / this.size),
-      averageMovementCost: roundSnapshotValue(totalMovementCost / this.size),
+      averageResource: roundSnapshotValue(totals.totalResource / this.size),
+      averageTrace: roundSnapshotValue(totals.totalTrace / this.size),
+      averagePressure: roundSnapshotValue(totals.totalPressure / this.size),
+      averageMoistureDelta: roundSnapshotValue(totals.totalMoisture / this.size),
+      averageFertility: roundSnapshotValue(totals.totalFertility / this.size),
+      averageMovementCost: roundSnapshotValue(totals.totalMovementCost / this.size),
       samples
     };
   }
 
+  snapshotScheduler(): SnapshotSchedulerSummary {
+    return {
+      ...this.world.chunks.schedulerStats,
+      chunkSize: this.world.chunks.chunkSize,
+      columns: this.world.chunks.columns,
+      rows: this.world.chunks.rows
+    };
+  }
+
+  snapshotChunks(options: ExperimentSnapshotOptions = {}): SnapshotChunkSummary[] {
+    return this.world.chunks.chunks
+      .filter((chunk) => options.includeAllChunks || chunk.activity !== "sleeping" || chunk.dirtyMask || chunk.agentCount > 0)
+      .map((chunk) => {
+        const cells = Math.max(1, chunk.width * chunk.height);
+        const summary = chunk.summary;
+        return {
+          id: chunk.id,
+          regionId: chunk.regionId,
+          x: chunk.x,
+          y: chunk.y,
+          activity: chunk.activity,
+          dirtyMask: chunk.dirtyMask,
+          agentCount: chunk.agentCount,
+          averageResource: roundSnapshotValue(summary.resource / cells),
+          averageTrace: roundSnapshotValue(summary.trace / cells),
+          averagePressure: roundSnapshotValue(summary.pressure / cells),
+          averageMoistureDelta: roundSnapshotValue(summary.moistureDelta / cells),
+          averageFertility: roundSnapshotValue(summary.averageFertility),
+          averageMovementCost: roundSnapshotValue(summary.averageMovementCost),
+          barrierRatio: roundSnapshotValue(summary.barrierRatio),
+          dominantBiome: summary.dominantBiome
+        };
+      });
+  }
+
+  snapshotRegions(): SnapshotRegionSummary[] {
+    return this.world.regions.regions.map((region) => {
+      const cells = Math.max(1, region.chunkIds.reduce((total, chunkId) => {
+        const chunk = this.world.chunks.chunks[chunkId];
+        return total + chunk.width * chunk.height;
+      }, 0));
+      return {
+        id: region.id,
+        x: region.x,
+        y: region.y,
+        chunks: region.chunkIds.length,
+        neighbors: [...region.neighborIds],
+        corridorHints: [...region.corridorHints],
+        dominantBiome: region.dominantBiome,
+        averageFertility: roundSnapshotValue(region.averageFertility),
+        averageMovementCost: roundSnapshotValue(region.averageMovementCost),
+        barrierRatio: roundSnapshotValue(region.barrierRatio),
+        averageResource: roundSnapshotValue(region.resource / cells),
+        averagePressure: roundSnapshotValue(region.pressure / cells),
+        averageTrace: roundSnapshotValue(region.trace / cells),
+        agentCount: region.agentCount
+      };
+    });
+  }
+
   snapshotWorld(metrics = this.metrics()): SnapshotWorldSummary {
-    let totalElevation = 0;
-    let totalMoisture = 0;
-    let totalTemperature = 0;
-    let totalFertility = 0;
-    for (let i = 0; i < this.size; i += 1) {
-      totalElevation += this.world.terrain.elevation[i];
-      totalMoisture += this.world.terrain.moistureBase[i];
-      totalTemperature += this.world.terrain.temperatureBase[i];
-      totalFertility += this.world.terrain.fertilityBase[i];
-    }
+    const totals = this.terrainTotals();
     return {
       width: this.width,
       height: this.height,
       biomeCounts: metrics.biomeCounts,
-      averageElevation: roundSnapshotValue(totalElevation / this.size),
-      averageMoistureBase: roundSnapshotValue(totalMoisture / this.size),
-      averageTemperatureBase: roundSnapshotValue(totalTemperature / this.size),
-      averageFertilityBase: roundSnapshotValue(totalFertility / this.size),
+      averageElevation: roundSnapshotValue(totals.elevation / this.size),
+      averageMoistureBase: roundSnapshotValue(totals.moisture / this.size),
+      averageTemperatureBase: roundSnapshotValue(totals.temperature / this.size),
+      averageFertilityBase: roundSnapshotValue(totals.fertility / this.size),
       activeProcesses: this.world.processes.length,
       processCount: this.world.processHistory.length + this.world.processes.length,
       lastProcess: this.latestProcess()
@@ -858,16 +942,7 @@ export class Simulation {
     const totalLineages = this.knownLineages.size;
     const totalSpecies = this.knownSpecies.size;
 
-    let totalResource = 0;
-    let totalTrace = 0;
-    let totalPressure = 0;
-    let totalMoisture = 0;
-    for (let i = 0; i < this.size; i += 1) {
-      totalResource += this.resources[i];
-      totalTrace += this.traces[i];
-      totalPressure += this.pressure[i];
-      totalMoisture += this.world.fields.moistureDelta[i];
-    }
+    const totals = this.environmentTotalsFromChunks();
 
     const processCount = this.world.processHistory.length + this.world.processes.length;
     return {
@@ -896,22 +971,119 @@ export class Simulation {
         dominantShare: this.agents.length ? speciesDominant.count / this.agents.length : 0
       },
       deathReasons: { ...this.deathReasons },
-      totalResource,
-      totalTrace,
-      totalPressure,
-      totalMoisture,
+      totalResource: totals.totalResource,
+      totalTrace: totals.totalTrace,
+      totalPressure: totals.totalPressure,
+      totalMoisture: totals.totalMoisture,
       eventCount: this.eventCount,
       lastEvent: this.lastEvent ? { ...this.lastEvent } : null,
       activeProcesses: this.world.processes.length,
       processCount,
       lastProcess: this.latestProcess(),
-      biomeCounts: biomeCountsFor(this.world.terrain),
+      biomeCounts: this.world.terrainTotals.biomeCounts,
       organAttempts: this.organAttempts,
       organAccepted: this.organAccepted,
       organRefused: this.organRefused,
       organBudgetSpent: this.organBudgetSpent,
-      organDominantRefusalReason: dominantRefusalReason(this.organRefusalReasons)
+      organDominantRefusalReason: dominantRefusalReason(this.organRefusalReasons),
+      chunkCount: this.world.chunks.chunks.length,
+      activeChunks: this.world.chunks.schedulerStats.activeChunks,
+      warmChunks: this.world.chunks.schedulerStats.warmChunks,
+      sleepingChunks: this.world.chunks.schedulerStats.sleepingChunks,
+      dirtyChunks: this.world.chunks.schedulerStats.dirtyChunks,
+      updatedChunks: this.world.chunks.schedulerStats.updatedChunks,
+      updatedCells: this.world.chunks.schedulerStats.updatedCells,
+      regionCount: this.world.regions.regions.length
     };
+  }
+
+  private updateAgentIntention(agent: Agent): void {
+    if (this.tickCount < agent.nextDecisionTick) {
+      return;
+    }
+
+    const idx = this.index(agent.x, agent.y);
+    const pressure = this.pressure[idx];
+    const resource = this.resources[idx];
+    const trace = this.traces[idx];
+    if (pressure > 1.35 + agent.genome.riskTolerance * 0.35) {
+      agent.intention = "escape-pressure";
+    } else if (agent.stuckTicks > 2) {
+      agent.intention = "explore-edge";
+    } else if (trace * Math.max(0, agent.genome.traceAffinity) > resource * 0.55) {
+      agent.intention = "follow-trace";
+    } else if (agent.energy > agent.genome.reproductionThreshold * 0.82) {
+      agent.intention = "migrate";
+    } else {
+      agent.intention = "forage";
+    }
+    agent.nextDecisionTick = this.tickCount + Math.max(1, Math.floor(this.config.agentDecisionInterval));
+  }
+
+  private refreshAgentChunkCounts(): void {
+    resetChunkAgentCounts(this.world.chunks);
+    for (const agent of this.agents) {
+      if (agent.energy > 0) {
+        recordAgentChunk(this.world.chunks, this.width, this.height, agent.x, agent.y, this.tickCount);
+      }
+    }
+    refreshDirtyRegionSummaries(this.world.regions, this.world.chunks, this.world.terrain, this.world.fields, this.width);
+  }
+
+  private environmentTotalsFromChunks(): {
+    totalResource: number;
+    totalTrace: number;
+    totalPressure: number;
+    totalMoisture: number;
+    totalFertility: number;
+    totalMovementCost: number;
+    barrierCells: number;
+  } {
+    if (this.size <= 65536) {
+      let totalResource = 0;
+      let totalTrace = 0;
+      let totalPressure = 0;
+      let totalMoisture = 0;
+      for (let i = 0; i < this.size; i += 1) {
+        totalResource += this.resources[i];
+        totalTrace += this.traces[i];
+        totalPressure += this.pressure[i];
+        totalMoisture += this.world.fields.moistureDelta[i];
+      }
+      return {
+        totalResource,
+        totalTrace,
+        totalPressure,
+        totalMoisture,
+        totalFertility: this.world.terrainTotals.fertility,
+        totalMovementCost: this.world.terrainTotals.movementCost,
+        barrierCells: this.world.terrainTotals.barrierCells
+      };
+    }
+
+    let totalResource = 0;
+    let totalTrace = 0;
+    let totalPressure = 0;
+    let totalMoisture = 0;
+    for (const chunk of this.world.chunks.chunks) {
+      totalResource += chunk.summary.resource;
+      totalTrace += chunk.summary.trace;
+      totalPressure += chunk.summary.pressure;
+      totalMoisture += chunk.summary.moistureDelta;
+    }
+    return {
+      totalResource,
+      totalTrace,
+      totalPressure,
+      totalMoisture,
+      totalFertility: this.world.terrainTotals.fertility,
+      totalMovementCost: this.world.terrainTotals.movementCost,
+      barrierCells: this.world.terrainTotals.barrierCells
+    };
+  }
+
+  private terrainTotals(): WorldState["terrainTotals"] {
+    return this.world.terrainTotals;
   }
 
   private latestProcess() {

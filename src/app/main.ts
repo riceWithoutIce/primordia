@@ -15,7 +15,7 @@ import {
   type OverlayLayer,
   type OverlayState
 } from "./render/mapViewTypes";
-import { paintMapCell } from "./render/mapViews";
+import { createProjection, worldToScreenCell, type ProjectionCache } from "./render/projection";
 import "./styles.css";
 
 const { canvas, ctx } = getCanvasContext();
@@ -30,6 +30,7 @@ let baseLayer: BaseLayer = DEFAULT_BASE_LAYER;
 let overlays: OverlayState = { ...DEFAULT_OVERLAYS };
 let renderBuffer: HTMLCanvasElement | null = null;
 let renderBufferCtx: CanvasRenderingContext2D | null = null;
+let projectionCache: ProjectionCache | null = null;
 
 const speed = getElement<HTMLInputElement>("speed");
 const speedLabel = getElement<HTMLOutputElement>("speed-label");
@@ -42,6 +43,13 @@ const downloadSnapshot = getElement<HTMLButtonElement>("download-snapshot");
 const snapshotStatus = getElement<HTMLOutputElement>("snapshot-status");
 const baseLayerButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".base-layer"));
 const overlayInputs = Array.from(document.querySelectorAll<HTMLInputElement>("[data-overlay]"));
+
+const inspector = {
+  cell: getElement<HTMLElement>("inspect-cell"),
+  chunk: getElement<HTMLElement>("inspect-chunk"),
+  region: getElement<HTMLElement>("inspect-region"),
+  field: getElement<HTMLElement>("inspect-field")
+};
 
 const metrics = {
   tick: getElement<HTMLElement>("m-tick"),
@@ -66,6 +74,10 @@ const metrics = {
   organRefused: getElement<HTMLElement>("m-organ-refused"),
   organBudget: getElement<HTMLElement>("m-organ-budget"),
   organRefusal: getElement<HTMLElement>("m-organ-refusal"),
+  chunks: getElement<HTMLElement>("m-chunks"),
+  chunkStates: getElement<HTMLElement>("m-chunk-states"),
+  updatedChunks: getElement<HTMLElement>("m-updated-chunks"),
+  regions: getElement<HTMLElement>("m-regions"),
   moisture: getElement<HTMLElement>("m-moisture"),
   energy: getElement<HTMLElement>("m-energy"),
   generation: getElement<HTMLElement>("m-generation"),
@@ -120,6 +132,7 @@ for (const button of baseLayerButtons) {
     const nextBaseLayer = button.dataset.baseLayer;
     if (isBaseLayer(nextBaseLayer)) {
       baseLayer = nextBaseLayer;
+      projectionCache = null;
       for (const item of baseLayerButtons) {
         item.classList.toggle("active", item === button);
       }
@@ -136,10 +149,23 @@ for (const input of overlayInputs) {
         ...overlays,
         [overlay]: input.checked
       };
+      projectionCache = null;
       render();
     }
   });
 }
+
+canvas.addEventListener("pointermove", (event) => {
+  updateInspector(event);
+});
+
+canvas.addEventListener("pointerdown", (event) => {
+  updateInspector(event);
+});
+
+canvas.addEventListener("pointerleave", () => {
+  clearInspector();
+});
 
 function getElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -166,17 +192,10 @@ function getCanvasContext(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingCo
 function render(): void {
   const cellW = canvas.width / sim.width;
   const cellH = canvas.height / sim.height;
-  const image = ctx.createImageData(sim.width, sim.height);
-  const data = image.data;
-
-  for (let i = 0; i < sim.size; i += 1) {
-    const cell = sim.environmentAt(i);
-    const offset = i * 4;
-    paintMapCell(data, offset, cell, baseLayer, overlays, sim.config.resourceCap);
-  }
+  projectionCache = createProjection(sim, baseLayer, overlays, projectionCache);
 
   const { buffer, bufferCtx } = getRenderBuffer(sim.width, sim.height);
-  bufferCtx.putImageData(image, 0, 0);
+  bufferCtx.putImageData(projectionCache.image, 0, 0);
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = false;
@@ -214,8 +233,9 @@ function getRenderBuffer(width: number, height: number): { buffer: HTMLCanvasEle
 }
 
 function drawAgent(agent: Agent, cellW: number, cellH: number): void {
-  const x = (agent.x + 0.5) * cellW;
-  const y = (agent.y + 0.5) * cellH;
+  const point = worldToScreenCell(agent.x, agent.y, sim.width, sim.height, canvas.width, canvas.height);
+  const x = point.x;
+  const y = point.y;
   const radius = Math.max(2.2, Math.min(cellW, cellH) * 0.42);
 
   ctx.beginPath();
@@ -294,6 +314,10 @@ function updateMetrics(m = sim.metrics()): void {
   metrics.organRefused.textContent = String(m.organRefused);
   metrics.organBudget.textContent = formatTotal(m.organBudgetSpent);
   metrics.organRefusal.textContent = m.organDominantRefusalReason ?? "-";
+  metrics.chunks.textContent = String(m.chunkCount);
+  metrics.chunkStates.textContent = `${m.activeChunks}/${m.warmChunks}/${m.sleepingChunks}`;
+  metrics.updatedChunks.textContent = `${m.updatedChunks}/${m.updatedCells.toLocaleString("zh-CN")}`;
+  metrics.regions.textContent = String(m.regionCount);
   metrics.moisture.textContent = formatTotal(m.totalMoisture);
   metrics.energy.textContent = m.averageEnergy.toFixed(1);
   metrics.generation.textContent = String(m.maxGeneration);
@@ -326,6 +350,30 @@ function formatProcess(process: EnvironmentProcessRecord | null): string {
   }
 
   return `${process.kind} ${process.x},${process.y}`;
+}
+
+function updateInspector(event: PointerEvent): void {
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.max(0, Math.min(sim.width - 1, Math.floor(((event.clientX - rect.left) / rect.width) * sim.width)));
+  const y = Math.max(0, Math.min(sim.height - 1, Math.floor(((event.clientY - rect.top) / rect.height) * sim.height)));
+  const idx = sim.index(x, y);
+  const cell = sim.environmentAt(idx);
+  const chunkId = sim.world.chunks.cellToChunk[idx];
+  const chunk = sim.world.chunks.chunks[chunkId];
+  const region = sim.world.regions.regions[chunk.regionId];
+  const cells = Math.max(1, chunk.width * chunk.height);
+
+  inspector.cell.textContent = `${x},${y} ${cell.terrainType}`;
+  inspector.chunk.textContent = `#${chunk.id} ${chunk.activity} ${chunk.agentCount} agent ${formatTotal(chunk.summary.resource / cells)} res`;
+  inspector.region.textContent = `#${region.id} ${region.dominantBiome ?? "-"} ${region.chunkIds.length} chunks`;
+  inspector.field.textContent = `r ${cell.resource.toFixed(2)} t ${cell.trace.toFixed(2)} p ${cell.pressure.toFixed(2)}`;
+}
+
+function clearInspector(): void {
+  inspector.cell.textContent = "-";
+  inspector.chunk.textContent = "-";
+  inspector.region.textContent = "-";
+  inspector.field.textContent = "-";
 }
 
 function tickRate(): number {

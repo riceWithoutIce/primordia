@@ -54,12 +54,13 @@ export function spawnMoistureFront(world: WorldState, config: SimulationConfig, 
   return process;
 }
 
-export function updateProcesses(world: WorldState, config: SimulationConfig): void {
+export function updateProcesses(world: WorldState, config: SimulationConfig): EnvironmentProcessRecord[] {
   if (world.processes.length === 0) {
-    return;
+    return [];
   }
 
   const active: EnvironmentProcessRecord[] = [];
+  const updated: EnvironmentProcessRecord[] = [];
   for (const process of world.processes) {
     process.age += 1;
     process.x = (process.x + process.dx + world.width) % world.width;
@@ -67,6 +68,7 @@ export function updateProcesses(world: WorldState, config: SimulationConfig): vo
       process.y = (process.y + process.dy + world.height) % world.height;
     }
     process.affectedCells = applyMoistureFront(world, config, process);
+    updated.push(process);
     process.active = process.age < process.duration;
     if (process.active) {
       active.push(process);
@@ -75,6 +77,7 @@ export function updateProcesses(world: WorldState, config: SimulationConfig): vo
     }
   }
   world.processes = active;
+  return updated;
 }
 
 export function applyMoistureFront(

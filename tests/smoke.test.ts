@@ -56,6 +56,10 @@ describe("primordia simulation smoke", () => {
       "m-organ-refused",
       "m-organ-budget",
       "m-organ-refusal",
+      "m-chunks",
+      "m-chunk-states",
+      "m-updated-chunks",
+      "m-regions",
       "m-moisture",
       "m-energy",
       "m-generation",
@@ -76,6 +80,15 @@ describe("primordia simulation smoke", () => {
     const snapshotIds = ["snapshot", "copy-snapshot", "download-snapshot", "snapshot-status"];
 
     for (const id of snapshotIds) {
+      expect(html).toContain(`id="${id}"`);
+    }
+  });
+
+  it("keeps large-world inspection controls wired in the page shell", () => {
+    const html = readFileSync("index.html", "utf8");
+    const inspectIds = ["inspect-cell", "inspect-chunk", "inspect-region", "inspect-field"];
+
+    for (const id of inspectIds) {
       expect(html).toContain(`id="${id}"`);
     }
   });

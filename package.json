@@ -8,7 +8,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "check": "tsc --noEmit && vitest run"
+    "check": "tsc --noEmit && vitest run",
+    "bench:core": "vitest bench tests/large-world.bench.ts --run"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

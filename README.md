@@ -19,12 +19,13 @@
 
 ## 当前状态
 
-Phase 2.2 世界化环境与分化生态已经完成验收：
+Phase 2.2 世界化环境与分化生态已经完成验收；Phase 2.3 大世界仿真框架已完成当前验收：
 
 - TypeScript core 支持 `closed` / `flux` 环境、有限资源通量、代谢、移动、采集、留痕、繁殖、变异、死亡原因和死亡残余回收。
 - genome 变异被固定边界收束，高感知、高采集、低繁殖阈值等优势带有生态代价。
 - Phase 2 增加确定性资源地形、肥力驱动通量、局部枯竭与恢复、压力扩散、屏障、移动成本、谱系颜色、谱系命运指标、确定性环境事件和实验快照导出。
 - Phase 2.2 将默认世界扩展到 `256 x 160`，引入 `WorldState`、静态 terrain、动态 fields、deterministic biome、moisture-front 环境过程、行为 genome traits、species/clade 指标和 snapshot schema v2。
+- Phase 2.3 当前默认世界为 `960 x 640`，使用 `32 x 32` chunk、region summaries、scheduler stats、agent intentions、snapshot schema v3 和 projection cache；热运行 benchmark 与浏览器观察已达到约 `16 tick/s` 目标。
 - UI 默认显示 terrain base map，并叠加 resource、agent 和 process overlays；也支持 biome、resource、pressure base layer 以及 pressure / lineage overlays。
 - `npm run test` 覆盖 DOM-free core、deterministic replay、closed 灭绝、flux 有界输入、death recovery、genome bounds、population cap、Phase 2/2.2 ecology mechanics、experiment snapshots 和 UI 绑定。
 - 公开静态页面：<https://ricewithoutice.github.io/primordia/>
@@ -107,6 +108,8 @@ sim.step(120);
 - [路线图](docs/04-roadmap.md)
 - [第二阶段验收](docs/05-phase-two-acceptance.md)
 - [Phase 2.2 世界化环境验收](docs/06-phase-two-two-acceptance.md)
+- [Phase 2.3 大世界架构](docs/09-large-world-architecture.md)
+- [Phase 2.3 验收评审](docs/10-phase-two-three-progress.md)
 - [Phase 3 行为器官边界](docs/07-phase-three-organ-boundaries.md)
 - [Phase 3 行为器官验收](docs/08-phase-three-acceptance.md)
 - [LLM 语义器官研究线](docs/future/llm-semantic-organ.md)

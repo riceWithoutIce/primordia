@@ -2,19 +2,19 @@ import type { DeathStats, SimulationConfig } from "../types";
 
 export const DEFAULTS: SimulationConfig = {
   environmentMode: "flux",
-  width: 256,
-  height: 160,
-  initialAgents: 96,
-  maxAgents: 720,
+  width: 960,
+  height: 640,
+  initialAgents: 180,
+  maxAgents: 900,
   initialEnergy: 42,
-  resourceGrowth: 0.052,
+  resourceGrowth: 0.018,
   resourceCap: 9,
   eventInterval: 220,
-  eventRadius: 8,
+  eventRadius: 18,
   eventIntensity: 1.5,
   processInterval: 360,
   processDuration: 160,
-  processRadius: 10,
+  processRadius: 24,
   processIntensity: 1.1,
   barrierThreshold: 0.86,
   terrainCostScale: 0.7,
@@ -25,6 +25,10 @@ export const DEFAULTS: SimulationConfig = {
   reproductionShare: 0.46,
   organBudgetPerTick: 18,
   organAuditLimit: 96,
+  chunkSize: 32,
+  warmChunkInterval: 4,
+  sleepingChunkInterval: 16,
+  agentDecisionInterval: 4,
   seed: 1337
 };
 

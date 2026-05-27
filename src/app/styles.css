@@ -228,7 +228,8 @@ input[type="range"] {
   margin: 0;
 }
 
-.metrics div {
+.metrics div,
+.inspector div {
   min-height: 74px;
   padding: 12px;
   border: 1px solid var(--line);
@@ -245,6 +246,23 @@ dd {
   margin: 8px 0 0;
   font-size: 22px;
   font-variant-numeric: tabular-nums;
+}
+
+.inspector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.inspector div {
+  min-height: 66px;
+}
+
+.inspector dd {
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .legend {

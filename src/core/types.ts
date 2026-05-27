@@ -4,6 +4,8 @@ export type RandomSource = () => number;
 
 export type AgentAction = "born" | "death" | "harvest" | "search" | "divide";
 
+export type AgentIntention = "forage" | "escape-pressure" | "migrate" | "follow-trace" | "explore-edge";
+
 export type DeathReason = "starvation" | "pressure" | "overflow";
 
 export type EnvironmentMode = "closed" | "flux";
@@ -58,6 +60,10 @@ export interface SimulationConfig {
   reproductionShare: number;
   organBudgetPerTick: number;
   organAuditLimit: number;
+  chunkSize: number;
+  warmChunkInterval: number;
+  sleepingChunkInterval: number;
+  agentDecisionInterval: number;
   seed: number;
 }
 
@@ -141,6 +147,96 @@ export interface DynamicFields {
   moistureDelta: Float32Array;
 }
 
+export type ChunkActivity = "active" | "warm" | "sleeping";
+
+export interface ChunkBounds {
+  id: number;
+  x: number;
+  y: number;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  width: number;
+  height: number;
+}
+
+export interface ChunkSummary {
+  id: number;
+  regionId: number;
+  activity: ChunkActivity;
+  dirtyMask: number;
+  agentCount: number;
+  resource: number;
+  trace: number;
+  pressure: number;
+  moistureDelta: number;
+  averageFertility: number;
+  averageMovementCost: number;
+  barrierRatio: number;
+  dominantBiome: TerrainType | null;
+}
+
+export interface ChunkRecord extends ChunkBounds {
+  regionId: number;
+  lastUpdatedTick: number;
+  lastTouchedTick: number;
+  activity: ChunkActivity;
+  dirtyMask: number;
+  summaryDirty: boolean;
+  projectionDirty: boolean;
+  agentCount: number;
+  summary: ChunkSummary;
+}
+
+export interface ChunkSchedulerStats {
+  tick: number;
+  totalChunks: number;
+  activeChunks: number;
+  warmChunks: number;
+  sleepingChunks: number;
+  dirtyChunks: number;
+  updatedChunks: number;
+  updatedCells: number;
+  preciseFieldUpdates: number;
+  catchUpFieldUpdates: number;
+  diffusionChunks: number;
+}
+
+export interface ChunkGrid {
+  chunkSize: number;
+  columns: number;
+  rows: number;
+  chunks: ChunkRecord[];
+  cellToChunk: Uint32Array;
+  schedulerStats: ChunkSchedulerStats;
+}
+
+export interface RegionSummary {
+  id: number;
+  x: number;
+  y: number;
+  chunkIds: number[];
+  neighborIds: number[];
+  corridorHints: number[];
+  dominantBiome: TerrainType | null;
+  averageFertility: number;
+  averageMovementCost: number;
+  barrierRatio: number;
+  resource: number;
+  pressure: number;
+  trace: number;
+  agentCount: number;
+}
+
+export interface RegionGraph {
+  regionSizeInChunks: number;
+  columns: number;
+  rows: number;
+  chunkToRegion: Uint32Array;
+  regions: RegionSummary[];
+}
+
 export interface EnvironmentEventRecord extends GridPoint {
   tick: number;
   kind: EnvironmentEventKind;
@@ -168,7 +264,18 @@ export interface WorldState {
   height: number;
   size: number;
   terrain: StaticTerrain;
+  terrainTotals: {
+    elevation: number;
+    moisture: number;
+    temperature: number;
+    fertility: number;
+    movementCost: number;
+    barrierCells: number;
+    biomeCounts: Record<TerrainType, number>;
+  };
   fields: DynamicFields;
+  chunks: ChunkGrid;
+  regions: RegionGraph;
   processes: EnvironmentProcessRecord[];
   processHistory: EnvironmentProcessRecord[];
   nextProcessId: number;
@@ -182,6 +289,8 @@ export interface Agent extends GridPoint {
   age: number;
   generation: number;
   genome: Genome;
+  intention: AgentIntention;
+  nextDecisionTick: number;
   lastAction: AgentAction;
   lastMove: MoveVector;
   stuckTicks: number;
@@ -240,6 +349,14 @@ export interface Metrics {
   organRefused: number;
   organBudgetSpent: number;
   organDominantRefusalReason: OrganRefusalReason | null;
+  chunkCount: number;
+  activeChunks: number;
+  warmChunks: number;
+  sleepingChunks: number;
+  dirtyChunks: number;
+  updatedChunks: number;
+  updatedCells: number;
+  regionCount: number;
 }
 
 export interface SnapshotAgent extends GridPoint {
@@ -250,6 +367,7 @@ export interface SnapshotAgent extends GridPoint {
   age: number;
   generation: number;
   lastAction: AgentAction;
+  intention: AgentIntention;
   lastBiome: TerrainType;
   genome: Genome;
 }
@@ -312,6 +430,47 @@ export interface SnapshotWorldSummary {
   lastProcess: EnvironmentProcessRecord | null;
 }
 
+export interface SnapshotChunkSummary {
+  id: number;
+  regionId: number;
+  x: number;
+  y: number;
+  activity: ChunkActivity;
+  dirtyMask: number;
+  agentCount: number;
+  averageResource: number;
+  averageTrace: number;
+  averagePressure: number;
+  averageMoistureDelta: number;
+  averageFertility: number;
+  averageMovementCost: number;
+  barrierRatio: number;
+  dominantBiome: TerrainType | null;
+}
+
+export interface SnapshotRegionSummary {
+  id: number;
+  x: number;
+  y: number;
+  chunks: number;
+  neighbors: number[];
+  corridorHints: number[];
+  dominantBiome: TerrainType | null;
+  averageFertility: number;
+  averageMovementCost: number;
+  barrierRatio: number;
+  averageResource: number;
+  averagePressure: number;
+  averageTrace: number;
+  agentCount: number;
+}
+
+export interface SnapshotSchedulerSummary extends ChunkSchedulerStats {
+  chunkSize: number;
+  columns: number;
+  rows: number;
+}
+
 export interface SnapshotOrganSummary {
   attempts: number;
   accepted: number;
@@ -324,12 +483,15 @@ export interface SnapshotOrganSummary {
 
 export interface ExperimentSnapshot {
   kind: "primordia.experiment-snapshot";
-  schemaVersion: 2;
+  schemaVersion: 3;
   id: string;
   tick: number;
   config: SimulationConfig;
   metrics: Metrics;
   world: SnapshotWorldSummary;
+  scheduler: SnapshotSchedulerSummary;
+  chunks: SnapshotChunkSummary[];
+  regions: SnapshotRegionSummary[];
   lineages: SnapshotLineageSummary[];
   species: SnapshotSpeciesSummary[];
   organs: SnapshotOrganSummary;
@@ -339,4 +501,5 @@ export interface ExperimentSnapshot {
 
 export interface ExperimentSnapshotOptions {
   environmentSampleStride?: number;
+  includeAllChunks?: boolean;
 }

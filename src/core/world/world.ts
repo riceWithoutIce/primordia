@@ -1,6 +1,7 @@
 import { DEFAULTS } from "../config/defaults";
-import { hash2d } from "../random/rng";
-import { barrierFor, createTerrain, resourceFertilityAt, resourceTerrainAt, terrainCellAt } from "./terrain";
+import { clamp, hash2d } from "../random/rng";
+import { createChunkGrid, createRegionGraph } from "./chunks";
+import { barrierFor, createTerrain, emptyBiomeCounts, resourceFertilityAt, terrainCellAt } from "./terrain";
 import type { EnvironmentCell, SimulationConfig, TerrainCell, WorldState } from "../types";
 
 export function createWorld(config: SimulationConfig): WorldState {
@@ -14,27 +15,64 @@ export function createWorld(config: SimulationConfig): WorldState {
   for (let i = 0; i < resource.length; i += 1) {
     const x = i % config.width;
     const y = Math.floor(i / config.width);
-    resource[i] = resourceTerrainAt(x, y, config);
+    const terrainFactor = terrain.terrainType[i] === "ocean" ? 0.38 : 0.95;
+    resource[i] = clamp(terrain.fertilityBase[i] * config.resourceCap * terrainFactor, 0, config.resourceCap);
     trace[i] = 0;
     pressure[i] = hash2d(x, y, config.seed ^ 0x3a11f00d) * 0.28;
     moistureDelta[i] = 0;
   }
+
+  const fields = {
+    resource,
+    trace,
+    pressure,
+    nextPressure,
+    moistureDelta
+  };
+  const chunks = createChunkGrid(config, terrain, fields);
+  const regions = createRegionGraph(chunks, terrain, fields, config.width);
+  const terrainTotals = computeTerrainTotals(terrain);
 
   return {
     width: config.width,
     height: config.height,
     size: config.width * config.height,
     terrain,
-    fields: {
-      resource,
-      trace,
-      pressure,
-      nextPressure,
-      moistureDelta
-    },
+    terrainTotals,
+    fields,
+    chunks,
+    regions,
     processes: [],
     processHistory: [],
     nextProcessId: 1
+  };
+}
+
+function computeTerrainTotals(terrain: ReturnType<typeof createTerrain>): WorldState["terrainTotals"] {
+  let elevation = 0;
+  let moisture = 0;
+  let temperature = 0;
+  let fertility = 0;
+  let movementCost = 0;
+  let barrierCells = 0;
+  const biomeCounts = emptyBiomeCounts();
+  for (let i = 0; i < terrain.elevation.length; i += 1) {
+    elevation += terrain.elevation[i];
+    moisture += terrain.moistureBase[i];
+    temperature += terrain.temperatureBase[i];
+    fertility += terrain.fertilityBase[i];
+    movementCost += terrain.movementCost[i];
+    barrierCells += terrain.barrier[i];
+    biomeCounts[terrain.terrainType[i]] += 1;
+  }
+  return {
+    elevation,
+    moisture,
+    temperature,
+    fertility,
+    movementCost,
+    barrierCells,
+    biomeCounts
   };
 }
 
