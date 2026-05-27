@@ -13,6 +13,7 @@ import {
   type OrganRefusalReason
 } from "../life/organs";
 import { shouldUpdateSpecies, speciesForGenome } from "../life/species";
+import { measureCoreProfile, type CoreProfileSink } from "../profile";
 import { clamp, mulberry32 } from "../random/rng";
 import {
   CHUNK_DIRTY,
@@ -94,6 +95,7 @@ export class Simulation {
   organRefusalReasons = new Map<OrganRefusalReason, number>();
   organAudit: OrganAuditRecord[] = [];
   agents: Agent[] = [];
+  profileSink: CoreProfileSink | null = null;
 
   constructor(config?: SimulationConfigPatch) {
     this.config = mergeConfig(config);
@@ -260,48 +262,62 @@ export class Simulation {
   }
 
   tick(): void {
-    this.tickCount += 1;
-    this.organBudgetRemaining = this.config.organBudgetPerTick;
-    const update = updateWorld(this.world, this.config, this.tickCount, this.random, (x, y) => this.nearestOpenPoint(x, y));
-    if (update.event) {
-      this.eventCount += 1;
-      this.lastEvent = update.event;
-    }
-
-    const newborns: Agent[] = [];
-    for (const agent of this.agents) {
-      const child = this.liveAgent(agent);
-      if (child) {
-        newborns.push(child);
+    measureCoreProfile(this.profileSink, "core.tick.total", () => {
+      this.tickCount += 1;
+      this.organBudgetRemaining = this.config.organBudgetPerTick;
+      const update = measureCoreProfile(this.profileSink, "core.tick.updateWorld", () =>
+        updateWorld(this.world, this.config, this.tickCount, this.random, (x, y) => this.nearestOpenPoint(x, y), this.profileSink)
+      );
+      if (update.event) {
+        this.eventCount += 1;
+        this.lastEvent = update.event;
       }
-    }
 
-    for (const newborn of newborns) {
-      this.agents.push(newborn);
-      this.births += 1;
-      this.knownSpecies.add(newborn.speciesId);
-    }
+      const newborns: Agent[] = [];
+      measureCoreProfile(this.profileSink, "core.tick.agents", () => {
+        for (const agent of this.agents) {
+          const child = this.liveAgent(agent);
+          if (child) {
+            newborns.push(child);
+          }
+        }
+      });
 
-    const survivors: Agent[] = [];
-    for (const agent of this.agents) {
-      if (agent.energy > 0) {
-        survivors.push(agent);
-      } else {
-        this.handleAgentDeath(agent, agent.deathReason ?? "starvation");
-      }
-    }
-    this.agents = survivors;
+      measureCoreProfile(this.profileSink, "core.tick.births", () => {
+        for (const newborn of newborns) {
+          this.agents.push(newborn);
+          this.births += 1;
+          this.knownSpecies.add(newborn.speciesId);
+        }
+      });
 
-    if (this.agents.length > this.config.maxAgents) {
-      this.agents.sort((a, b) => b.energy - a.energy);
-      const removed = this.agents.splice(this.config.maxAgents);
-      for (const agent of removed) {
-        this.markDeath(agent, "overflow");
-        this.handleAgentDeath(agent, "overflow");
-      }
-    }
+      const survivors: Agent[] = [];
+      measureCoreProfile(this.profileSink, "core.tick.survivors", () => {
+        for (const agent of this.agents) {
+          if (agent.energy > 0) {
+            survivors.push(agent);
+          } else {
+            this.handleAgentDeath(agent, agent.deathReason ?? "starvation");
+          }
+        }
+        this.agents = survivors;
+      });
 
-    this.refreshAgentChunkCounts();
+      measureCoreProfile(this.profileSink, "core.tick.overflow", () => {
+        if (this.agents.length > this.config.maxAgents) {
+          this.agents.sort((a, b) => b.energy - a.energy);
+          const removed = this.agents.splice(this.config.maxAgents);
+          for (const agent of removed) {
+            this.markDeath(agent, "overflow");
+            this.handleAgentDeath(agent, "overflow");
+          }
+        }
+      });
+
+      measureCoreProfile(this.profileSink, "core.tick.refreshAgentChunks", () => {
+        this.refreshAgentChunkCounts();
+      });
+    });
   }
 
   attemptOrganAction(request: OrganActionRequest): OrganActionOutcome {

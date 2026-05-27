@@ -17,6 +17,13 @@ import {
 } from "./render/mapViewTypes";
 import { createProjection, worldToScreenCell, type ProjectionCache } from "./render/projection";
 import { overlayAffectsProjection } from "./render/renderDependencies";
+import {
+  createTerrainProfilerFromSearch,
+  type TerrainProfilePhase,
+  type TerrainProfileReport,
+  type TerrainProfiler,
+  type TerrainProfileScenario
+} from "./terrainProfiler";
 import "./styles.css";
 
 const { canvas, ctx } = getCanvasContext();
@@ -32,6 +39,18 @@ let overlays: OverlayState = { ...DEFAULT_OVERLAYS };
 let renderBuffer: HTMLCanvasElement | null = null;
 let renderBufferCtx: CanvasRenderingContext2D | null = null;
 let projectionCache: ProjectionCache | null = null;
+const terrainProfiler = createTerrainProfilerFromSearch(window.location.search, {
+  log: (message) => console.info(message)
+});
+let lastProfileTickCount = 0;
+let terrainProfileLogged = false;
+const TERRAIN_PROFILE_REPORT_ID = "terrain-profile-report";
+
+declare global {
+  interface Window {
+    primordiaTerrainProfile?: () => TerrainProfileReport;
+  }
+}
 
 const speed = getElement<HTMLInputElement>("speed");
 const speedLabel = getElement<HTMLOutputElement>("speed-label");
@@ -109,6 +128,7 @@ reset.addEventListener("click", () => {
   sim.reset({
     seed: Math.floor(Math.random() * 1000000)
   });
+  sim.profileSink = terrainProfiler?.coreSink() ?? null;
   tickAccumulator = 0;
   running = true;
   toggle.textContent = "暂停";
@@ -158,7 +178,15 @@ for (const input of overlayInputs) {
   });
 }
 
+if (terrainProfiler) {
+  sim.profileSink = terrainProfiler.coreSink();
+  configureTerrainProfileBaseline();
+  exposeTerrainProfileReport(terrainProfiler);
+  lastProfileTickCount = sim.tickCount;
+}
+
 canvas.addEventListener("pointermove", (event) => {
+  terrainProfiler?.recordPointerMove();
   updateInspector(event);
 });
 
@@ -192,30 +220,96 @@ function getCanvasContext(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingCo
   return { canvas: element, ctx: context };
 }
 
-function render(): void {
-  const cellW = canvas.width / sim.width;
-  const cellH = canvas.height / sim.height;
-  projectionCache = createProjection(sim, baseLayer, overlays, projectionCache);
+function configureTerrainProfileBaseline(): void {
+  baseLayer = "terrain";
+  overlays = {
+    resources: false,
+    agents: false,
+    processes: false,
+    pressure: false,
+    lineages: false
+  };
+  projectionCache = null;
 
-  const { buffer, bufferCtx } = getRenderBuffer(sim.width, sim.height);
-  bufferCtx.putImageData(projectionCache.image, 0, 0);
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(buffer, 0, 0, canvas.width, canvas.height);
-
-  if (overlays.agents) {
-    for (const agent of sim.agents) {
-      drawAgent(agent, cellW, cellH);
+  for (const button of baseLayerButtons) {
+    button.classList.toggle("active", button.dataset.baseLayer === baseLayer);
+  }
+  for (const input of overlayInputs) {
+    const overlay = input.dataset.overlay;
+    if (isOverlayLayer(overlay)) {
+      input.checked = overlays[overlay];
     }
   }
 
+  console.info("[terrain-profile] enabled: base=terrain, overlays=off");
+}
+
+function exposeTerrainProfileReport(profiler: TerrainProfiler): void {
+  window.primordiaTerrainProfile = () => profiler.report(createTerrainProfileScenario());
+}
+
+function createTerrainProfileScenario(): TerrainProfileScenario {
+  return {
+    baseLayer,
+    overlays: { ...overlays },
+    tickRate: tickRate(),
+    world: {
+      width: sim.width,
+      height: sim.height,
+      tick: sim.tickCount,
+      agents: sim.agents.length,
+      chunks: sim.world.chunks.chunks.length
+    },
+    canvas: {
+      width: canvas.width,
+      height: canvas.height,
+      clientWidth: canvas.clientWidth,
+      clientHeight: canvas.clientHeight,
+      devicePixelRatio: window.devicePixelRatio || 1
+    }
+  };
+}
+
+function render(): void {
+  const renderStart = profileNow();
+  const cellW = canvas.width / sim.width;
+  const cellH = canvas.height / sim.height;
+  const projectionStart = profileNow();
+  projectionCache = createProjection(sim, baseLayer, overlays, projectionCache, terrainProfiler);
+  recordProfileDuration("render.projection.total", projectionStart);
+
+  const { buffer, bufferCtx } = getRenderBuffer(sim.width, sim.height);
+  const uploadStart = profileNow();
+  bufferCtx.putImageData(projectionCache.image, 0, 0);
+  recordProfileDuration("render.putImageData", uploadStart);
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = false;
+  const drawImageStart = profileNow();
+  ctx.drawImage(buffer, 0, 0, canvas.width, canvas.height);
+  recordProfileDuration("render.drawImage", drawImageStart);
+
+  if (overlays.agents) {
+    const agentsStart = profileNow();
+    for (const agent of sim.agents) {
+      drawAgent(agent, cellW, cellH);
+    }
+    recordProfileDuration("render.overlayAgents", agentsStart);
+  }
+
+  const metricsStart = profileNow();
   const m = sim.metrics();
+  recordProfileDuration("metrics.compute", metricsStart);
   if (overlays.processes) {
+    const processesStart = profileNow();
     drawEventPulse(m.lastEvent, cellW, cellH);
     drawProcessPulse(m.lastProcess, cellW, cellH);
+    recordProfileDuration("render.overlayProcesses", processesStart);
   }
+  const metricsDomStart = profileNow();
   updateMetrics(m);
+  recordProfileDuration("metrics.domUpdate", metricsDomStart);
+  recordProfileDuration("render.total", renderStart);
 }
 
 function getRenderBuffer(width: number, height: number): { buffer: HTMLCanvasElement; bufferCtx: CanvasRenderingContext2D } {
@@ -356,6 +450,7 @@ function formatProcess(process: EnvironmentProcessRecord | null): string {
 }
 
 function updateInspector(event: PointerEvent): void {
+  const inspectorStart = profileNow();
   const rect = canvas.getBoundingClientRect();
   const x = Math.max(0, Math.min(sim.width - 1, Math.floor(((event.clientX - rect.left) / rect.width) * sim.width)));
   const y = Math.max(0, Math.min(sim.height - 1, Math.floor(((event.clientY - rect.top) / rect.height) * sim.height)));
@@ -370,6 +465,7 @@ function updateInspector(event: PointerEvent): void {
   inspector.field.textContent = `res ${cell.resource.toFixed(2)} / trace ${cell.trace.toFixed(2)} / pressure ${cell.pressure.toFixed(2)} / moisture ${cell.moistureDelta.toFixed(2)}`;
   inspector.chunk.textContent = `#${chunk.id} ${chunk.activity} / agents ${chunk.agentCount} / avgRes ${formatTotal(chunk.summary.resource / cells)}`;
   inspector.region.textContent = `#${region.id} ${region.dominantBiome ?? "-"} / ${region.chunkIds.length} chunks`;
+  recordProfileDuration("inspector.update", inspectorStart);
 }
 
 function tickRate(): number {
@@ -425,7 +521,44 @@ function downloadSnapshotJson(): void {
   snapshotStatus.textContent = "已下载快照 JSON";
 }
 
+function profileNow(): number {
+  return terrainProfiler ? terrainProfiler.now() : 0;
+}
+
+function recordProfileDuration(phase: TerrainProfilePhase, startedAt: number): void {
+  if (terrainProfiler) {
+    terrainProfiler.recordDuration(phase, terrainProfiler.now() - startedAt);
+  }
+}
+
+function maybeFlushTerrainProfile(now: number): void {
+  if (!terrainProfiler) {
+    return;
+  }
+
+  const scenario = createTerrainProfileScenario();
+  terrainProfiler.maybeSample(now, scenario);
+  if (!terrainProfileLogged && terrainProfiler.isComplete(now)) {
+    terrainProfileLogged = true;
+    const report = terrainProfiler.report(scenario, now);
+    publishTerrainProfileReport(report);
+    console.info("[terrain-profile] complete", report);
+  }
+}
+
+function publishTerrainProfileReport(report: TerrainProfileReport): void {
+  let element = document.getElementById(TERRAIN_PROFILE_REPORT_ID);
+  if (!element) {
+    element = document.createElement("script");
+    element.id = TERRAIN_PROFILE_REPORT_ID;
+    element.setAttribute("type", "application/json");
+    document.body.append(element);
+  }
+  element.textContent = JSON.stringify(report);
+}
+
 function advanceSimulation(now: number): void {
+  const advanceStart = profileNow();
   if (running) {
     if (!lastFrameTime) {
       lastFrameTime = now;
@@ -437,18 +570,27 @@ function advanceSimulation(now: number): void {
     const ticks = Math.floor(tickAccumulator);
 
     if (ticks > 0) {
+      const stepStart = profileNow();
       sim.step(ticks);
+      recordProfileDuration("sim.step", stepStart);
       tickAccumulator -= ticks;
     }
   } else {
     tickAccumulator = 0;
   }
+  recordProfileDuration("advanceSimulation", advanceStart);
 }
 
 function loop(now: number): void {
+  const frameStart = profileNow();
+  terrainProfiler?.recordFrameInterval(now);
   advanceSimulation(now);
   lastFrameTime = now;
   render();
+  const ticks = Math.max(0, sim.tickCount - (lastProfileTickCount ?? sim.tickCount));
+  lastProfileTickCount = sim.tickCount;
+  terrainProfiler?.recordFrame(profileNow() - frameStart, ticks);
+  maybeFlushTerrainProfile(now);
   requestAnimationFrame(loop);
 }
 

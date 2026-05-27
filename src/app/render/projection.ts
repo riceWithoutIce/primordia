@@ -1,6 +1,6 @@
 import type { BaseLayer, OverlayState } from "./mapViewTypes";
 import { paintMapCell } from "./mapViews";
-import { clearChunkProjectionDirty } from "../../core/primordia";
+import { CHUNK_DIRTY, clearChunkProjectionDirty } from "../../core/primordia";
 import type { ChunkRecord, EnvironmentCell, Simulation } from "../../core/primordia";
 import { chunkAffectsProjection, projectionDependencyMask, projectionOverlayKey } from "./renderDependencies";
 
@@ -13,11 +13,31 @@ export interface ProjectionCache {
   image: ImageData;
 }
 
+export interface ProjectionProfileStats {
+  dirtyMaskChunks: number;
+  fullRebuild: boolean;
+  moistureDirtyChunks: number;
+  projectedCells: number;
+  projectedChunks: number;
+  pressureDirtyChunks: number;
+  resourceDirtyChunks: number;
+  selectChunksMs: number;
+  paintCellsMs: number;
+  totalChunks: number;
+  visibleDependencyMask: number;
+}
+
+export interface ProjectionProfileSink {
+  now: () => number;
+  recordProjection: (stats: ProjectionProfileStats) => void;
+}
+
 export function createProjection(
   sim: Simulation,
   baseLayer: BaseLayer,
   overlays: OverlayState,
-  previous: ProjectionCache | null
+  previous: ProjectionCache | null,
+  profile?: ProjectionProfileSink | null
 ): ProjectionCache {
   const overlayKey = projectionOverlayKey(overlays);
   const canReuse =
@@ -31,10 +51,17 @@ export function createProjection(
   const image = canReuse ? previous.image : new ImageData(sim.width, sim.height);
   const data = image.data;
   const visibleDependencyMask = projectionDependencyMask(baseLayer, overlays);
+  const selectStart = profile?.now() ?? 0;
   const selection = selectProjectionChunks(sim.world.chunks.chunks, Boolean(canReuse), visibleDependencyMask);
+  const selectChunksMs = profile ? profile.now() - selectStart : 0;
   const chunks = selection.chunks;
+  let projectedCells = 0;
+  const paintStart = profile?.now() ?? 0;
 
   for (const chunk of chunks) {
+    if (profile) {
+      projectedCells += chunk.width * chunk.height;
+    }
     for (let y = chunk.startY; y < chunk.endY; y += 1) {
       for (let x = chunk.startX; x < chunk.endX; x += 1) {
         const index = y * sim.width + x;
@@ -43,6 +70,24 @@ export function createProjection(
       }
     }
     clearChunkProjectionDirty(sim.world.chunks, chunk.id);
+  }
+  const paintCellsMs = profile ? profile.now() - paintStart : 0;
+
+  if (profile) {
+    const dirtyStats = countProjectionDirtyStats(sim.world.chunks.chunks);
+    profile.recordProjection({
+      dirtyMaskChunks: dirtyStats.dirtyMaskChunks,
+      fullRebuild: !canReuse,
+      moistureDirtyChunks: dirtyStats.moistureDirtyChunks,
+      projectedCells,
+      projectedChunks: chunks.length,
+      pressureDirtyChunks: dirtyStats.pressureDirtyChunks,
+      resourceDirtyChunks: dirtyStats.resourceDirtyChunks,
+      selectChunksMs,
+      paintCellsMs,
+      totalChunks: sim.world.chunks.chunks.length,
+      visibleDependencyMask
+    });
   }
 
   return {
@@ -142,4 +187,39 @@ export function screenToWorldCell(
 
 export function cellForProjection(cell: EnvironmentCell): EnvironmentCell {
   return cell;
+}
+
+function countProjectionDirtyStats(chunks: ChunkRecord[]): {
+  dirtyMaskChunks: number;
+  moistureDirtyChunks: number;
+  pressureDirtyChunks: number;
+  resourceDirtyChunks: number;
+} {
+  let dirtyMaskChunks = 0;
+  let moistureDirtyChunks = 0;
+  let pressureDirtyChunks = 0;
+  let resourceDirtyChunks = 0;
+
+  for (const chunk of chunks) {
+    const mask = chunk.dirtyMask | chunk.projectionDirtyMask;
+    if (mask) {
+      dirtyMaskChunks += 1;
+    }
+    if (mask & CHUNK_DIRTY.moisture) {
+      moistureDirtyChunks += 1;
+    }
+    if (mask & CHUNK_DIRTY.pressure) {
+      pressureDirtyChunks += 1;
+    }
+    if (mask & CHUNK_DIRTY.resource) {
+      resourceDirtyChunks += 1;
+    }
+  }
+
+  return {
+    dirtyMaskChunks,
+    moistureDirtyChunks,
+    pressureDirtyChunks,
+    resourceDirtyChunks
+  };
 }
