@@ -397,6 +397,7 @@ export class Simulation {
     }
   }
 
+
   private applyOrganEffect(outcome: Extract<OrganActionOutcome, { accepted: true }>, agent: Agent): void {
     if (outcome.capabilityId !== "trace-mark" || outcome.intent !== "mark-trace" || outcome.target.kind !== "cell") {
       return;
@@ -438,7 +439,8 @@ export class Simulation {
   liveAgent(agent: Agent): Agent | null {
     agent.age += 1;
 
-    if (!this.spendMetabolism(agent)) {
+    const alive = this.spendMetabolism(agent);
+    if (!alive) {
       return null;
     }
 

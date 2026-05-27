@@ -16,6 +16,7 @@ import {
   type OverlayState
 } from "./render/mapViewTypes";
 import { createProjection, worldToScreenCell, type ProjectionCache } from "./render/projection";
+import { overlayAffectsProjection } from "./render/renderDependencies";
 import "./styles.css";
 
 const { canvas, ctx } = getCanvasContext();
@@ -149,7 +150,9 @@ for (const input of overlayInputs) {
         ...overlays,
         [overlay]: input.checked
       };
-      projectionCache = null;
+      if (overlayAffectsProjection(overlay)) {
+        projectionCache = null;
+      }
       render();
     }
   });

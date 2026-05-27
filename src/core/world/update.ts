@@ -40,7 +40,7 @@ export function updateWorld(
       activeProcess.y,
       activeProcess.radius,
       tick,
-      CHUNK_DIRTY.process
+      environmentProcessDirtyMask(activeProcess)
     );
   }
   const process = maybeSpawnProcess(world, config, tick);
@@ -49,7 +49,7 @@ export function updateWorld(
     touchArea(world.chunks, world.width, world.height, process.x, process.y, process.radius, tick, CHUNK_DIRTY.process);
   }
   if (event) {
-    touchArea(world.chunks, world.width, world.height, event.x, event.y, event.radius, tick, CHUNK_DIRTY.all);
+    touchArea(world.chunks, world.width, world.height, event.x, event.y, event.radius, tick, environmentEventDirtyMask(event));
   }
   refreshDirtyRegionSummaries(world.regions, world.chunks, world.terrain, world.fields, world.width);
   return { event, process };
@@ -77,7 +77,11 @@ export function updateEnvironmentFields(
     const isCatchUp = chunk.activity !== "active" && elapsed > 1;
     updatedChunks += 1;
     updatedCells += updateEnvironmentChunk(world, config, cap, chunk, elapsed, isCatchUp);
-    markChunkProjectionDirty(world.chunks, chunk.id);
+    markChunkProjectionDirty(
+      world.chunks,
+      chunk.id,
+      CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure | CHUNK_DIRTY.moisture
+    );
     if (isCatchUp) {
       catchUpFieldUpdates += 1;
     } else {
@@ -184,6 +188,7 @@ export function diffusePressure(world: WorldState, config: SimulationConfig, tic
       }
     }
   }
+
   for (const chunkId of chunksToDiffuse) {
     const chunk = world.chunks.chunks[chunkId];
     let pressureTotal = 0;
@@ -196,8 +201,9 @@ export function diffusePressure(world: WorldState, config: SimulationConfig, tic
       }
     }
     chunk.summary.pressure = pressureTotal;
-    markChunkProjectionDirty(world.chunks, chunk.id);
+    markChunkProjectionDirty(world.chunks, chunk.id, CHUNK_DIRTY.pressure);
   }
+
   refreshRegionsById(
     world.regions,
     world.chunks,
@@ -256,4 +262,20 @@ function terrainResourceFertility(fertilityBase: number, terrainType: string, co
   }
   const terrainFactor = terrainType === "ocean" ? 0.38 : 0.95;
   return clamp((fertilityBase * terrainFactor) / 0.9, 0, 1);
+}
+
+export function environmentProcessDirtyMask(process: EnvironmentProcessRecord): number {
+  switch (process.kind) {
+    case "moisture-front":
+      return CHUNK_DIRTY.process | CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure | CHUNK_DIRTY.moisture;
+  }
+}
+
+export function environmentEventDirtyMask(event: EnvironmentEventRecord): number {
+  switch (event.kind) {
+    case "bloom":
+      return CHUNK_DIRTY.resource | CHUNK_DIRTY.trace;
+    case "pressure":
+      return CHUNK_DIRTY.pressure | CHUNK_DIRTY.trace;
+  }
 }

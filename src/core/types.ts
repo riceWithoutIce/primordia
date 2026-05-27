@@ -183,6 +183,7 @@ export interface ChunkRecord extends ChunkBounds {
   lastTouchedTick: number;
   activity: ChunkActivity;
   dirtyMask: number;
+  projectionDirtyMask: number;
   summaryDirty: boolean;
   projectionDirty: boolean;
   agentCount: number;

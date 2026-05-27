@@ -54,6 +54,7 @@ export function createChunkGrid(config: SimulationConfig, terrain: StaticTerrain
         lastTouchedTick: 0,
         activity: "sleeping",
         dirtyMask: 0,
+        projectionDirtyMask: CHUNK_DIRTY.all,
         summaryDirty: true,
         projectionDirty: true,
         agentCount: 0,
@@ -183,6 +184,7 @@ export function touchChunk(grid: ChunkGrid, chunkId: number, tick: number, dirty
   chunk.lastTouchedTick = Math.max(chunk.lastTouchedTick, tick);
   chunk.activity = "active";
   chunk.dirtyMask |= dirtyMask;
+  chunk.projectionDirtyMask |= dirtyMask;
   chunk.summaryDirty = true;
   chunk.projectionDirty = true;
 }
@@ -193,12 +195,14 @@ export function markChunkSummaryDirty(grid: ChunkGrid, chunkId: number): void {
     return;
   }
   chunk.summaryDirty = true;
+  chunk.projectionDirtyMask |= CHUNK_DIRTY.summary;
   chunk.projectionDirty = true;
 }
 
-export function markChunkProjectionDirty(grid: ChunkGrid, chunkId: number): void {
+export function markChunkProjectionDirty(grid: ChunkGrid, chunkId: number, dirtyMask: number = CHUNK_DIRTY.all): void {
   const chunk = grid.chunks[chunkId];
   if (chunk) {
+    chunk.projectionDirtyMask |= dirtyMask;
     chunk.projectionDirty = true;
   }
 }
@@ -345,6 +349,7 @@ export function refreshChunkSummary(
 export function clearChunkProjectionDirty(grid: ChunkGrid, chunkId: number): void {
   const chunk = grid.chunks[chunkId];
   if (chunk) {
+    chunk.projectionDirtyMask = 0;
     chunk.projectionDirty = false;
   }
 }

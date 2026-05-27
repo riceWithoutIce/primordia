@@ -1,7 +1,8 @@
 import type { BaseLayer, OverlayState } from "./mapViewTypes";
 import { paintMapCell } from "./mapViews";
 import { clearChunkProjectionDirty } from "../../core/primordia";
-import type { EnvironmentCell, Simulation } from "../../core/primordia";
+import type { ChunkRecord, EnvironmentCell, Simulation } from "../../core/primordia";
+import { chunkAffectsProjection, projectionDependencyMask, projectionOverlayKey } from "./renderDependencies";
 
 export interface ProjectionCache {
   width: number;
@@ -18,7 +19,7 @@ export function createProjection(
   overlays: OverlayState,
   previous: ProjectionCache | null
 ): ProjectionCache {
-  const overlayKey = stableOverlayKey(overlays);
+  const overlayKey = projectionOverlayKey(overlays);
   const canReuse =
     previous &&
     previous.width === sim.width &&
@@ -29,11 +30,9 @@ export function createProjection(
 
   const image = canReuse ? previous.image : new ImageData(sim.width, sim.height);
   const data = image.data;
-  const chunks = canReuse
-    ? sim.world.chunks.chunks.filter(
-        (chunk) => chunk.projectionDirty || chunk.activity !== "sleeping" || chunk.dirtyMask || chunk.agentCount > 0
-      )
-    : sim.world.chunks.chunks;
+  const visibleDependencyMask = projectionDependencyMask(baseLayer, overlays);
+  const selection = selectProjectionChunks(sim.world.chunks.chunks, Boolean(canReuse), visibleDependencyMask);
+  const chunks = selection.chunks;
 
   for (const chunk of chunks) {
     for (let y = chunk.startY; y < chunk.endY; y += 1) {
@@ -53,6 +52,63 @@ export function createProjection(
     overlayKey,
     resourceCap: sim.config.resourceCap,
     image
+  };
+}
+
+export function selectProjectionChunks(
+  chunks: ChunkRecord[],
+  canReuse: boolean,
+  visibleDependencyMask: number
+): {
+  chunks: ChunkRecord[];
+  reasonVisibleDependency: number;
+  reasonProjectionDirty: number;
+  reasonDirtyMask: number;
+  reasonActiveOrWarm: number;
+  reasonAgentCount: number;
+} {
+  let reasonProjectionDirty = 0;
+  let reasonDirtyMask = 0;
+  let reasonActiveOrWarm = 0;
+  let reasonAgentCount = 0;
+  let reasonVisibleDependency = 0;
+  const selected: ChunkRecord[] = [];
+
+  for (const chunk of chunks) {
+    const byVisibleDependency = chunkAffectsProjection(chunk, visibleDependencyMask, canReuse);
+    const byProjectionDirty = chunk.projectionDirty;
+    const byDirtyMask = Boolean(chunk.dirtyMask || chunk.projectionDirtyMask);
+    const byActivity = chunk.activity !== "sleeping";
+    const byAgentCount = chunk.agentCount > 0;
+
+    if (byVisibleDependency) {
+      reasonVisibleDependency += 1;
+    }
+    if (byProjectionDirty) {
+      reasonProjectionDirty += 1;
+    }
+    if (byDirtyMask) {
+      reasonDirtyMask += 1;
+    }
+    if (byActivity) {
+      reasonActiveOrWarm += 1;
+    }
+    if (byAgentCount) {
+      reasonAgentCount += 1;
+    }
+
+    if (byVisibleDependency) {
+      selected.push(chunk);
+    }
+  }
+
+  return {
+    chunks: selected,
+    reasonVisibleDependency,
+    reasonProjectionDirty,
+    reasonDirtyMask,
+    reasonActiveOrWarm,
+    reasonAgentCount
   };
 }
 
@@ -86,10 +142,4 @@ export function screenToWorldCell(
 
 export function cellForProjection(cell: EnvironmentCell): EnvironmentCell {
   return cell;
-}
-
-function stableOverlayKey(overlays: OverlayState): string {
-  return `${overlays.resources ? 1 : 0}${overlays.agents ? 1 : 0}${overlays.processes ? 1 : 0}${overlays.pressure ? 1 : 0}${
-    overlays.lineages ? 1 : 0
-  }`;
 }
