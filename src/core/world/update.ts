@@ -90,7 +90,9 @@ export function updateEnvironmentFields(
   let updatedChunks = 0;
   let updatedCells = 0;
   let preciseFieldUpdates = 0;
+  let preciseUpdatedCells = 0;
   let catchUpFieldUpdates = 0;
+  let catchUpUpdatedCells = 0;
 
   measureCoreProfile(profile, "core.world.environmentChunks", () => {
     for (const chunk of world.chunks.chunks) {
@@ -106,8 +108,10 @@ export function updateEnvironmentFields(
       markChunkProjectionDirty(world.chunks, chunk.id, result.dirtyMask);
       if (isCatchUp) {
         catchUpFieldUpdates += 1;
+        catchUpUpdatedCells += result.updatedCells;
       } else {
         preciseFieldUpdates += 1;
+        preciseUpdatedCells += result.updatedCells;
       }
       chunk.lastUpdatedTick = tick;
       chunk.dirtyMask = 0;
@@ -116,6 +120,10 @@ export function updateEnvironmentFields(
   });
   profile?.recordValue("core.world.updatedChunks", updatedChunks);
   profile?.recordValue("core.world.updatedCells", updatedCells);
+  profile?.recordValue("core.world.preciseUpdatedChunks", preciseFieldUpdates);
+  profile?.recordValue("core.world.preciseUpdatedCells", preciseUpdatedCells);
+  profile?.recordValue("core.world.catchUpUpdatedChunks", catchUpFieldUpdates);
+  profile?.recordValue("core.world.catchUpUpdatedCells", catchUpUpdatedCells);
   profile?.recordValue("core.dirty.moistureAfterEnvironment", countProjectionDirtyMask(world, CHUNK_DIRTY.moisture));
 
   const diffusionChunks = measureCoreProfile(profile, "core.world.diffusePressure", () =>
@@ -201,18 +209,28 @@ export function diffusePressure(
 
   const pressure = world.fields.pressure;
   const chunksToDiffuse = new Set<number>();
+  const sourceChunksToDiffuse = new Set<number>();
+  let skippedSleepingChunks = 0;
   measureCoreProfile(profile, "core.diffusion.selectChunks", () => {
     for (const chunk of world.chunks.chunks) {
       if (world.size > 65536 && chunk.activity === "sleeping" && !chunk.dirtyMask) {
+        skippedSleepingChunks += 1;
         continue;
       }
       chunksToDiffuse.add(chunk.id);
+      sourceChunksToDiffuse.add(chunk.id);
       for (const neighborId of neighborChunkIds(world.chunks, chunk)) {
         chunksToDiffuse.add(neighborId);
       }
     }
   });
+  const neighborExpansionChunks = Math.max(0, chunksToDiffuse.size - sourceChunksToDiffuse.size);
+  const computedCells = countChunkCells(world.chunks.chunks, chunksToDiffuse);
+  profile?.recordValue("core.diffusion.sourceChunks", sourceChunksToDiffuse.size);
   profile?.recordValue("core.diffusion.selectedChunks", chunksToDiffuse.size);
+  profile?.recordValue("core.diffusion.neighborExpansionChunks", neighborExpansionChunks);
+  profile?.recordValue("core.diffusion.skippedSleepingChunks", skippedSleepingChunks);
+  profile?.recordValue("core.diffusion.computedCells", computedCells);
 
   measureCoreProfile(profile, "core.diffusion.compute", () => {
     for (const chunkId of chunksToDiffuse) {
@@ -232,22 +250,42 @@ export function diffusePressure(
     }
   });
 
+  let changedCells = 0;
+  let unchangedCells = 0;
+  let changedChunks = 0;
+  let unchangedChunks = 0;
   measureCoreProfile(profile, "core.diffusion.commit", () => {
     for (const chunkId of chunksToDiffuse) {
       const chunk = world.chunks.chunks[chunkId];
       let pressureTotal = 0;
+      let chunkChanged = false;
       for (let y = chunk.startY; y < chunk.endY; y += 1) {
         for (let x = chunk.startX; x < chunk.endX; x += 1) {
           const idx = y * world.width + x;
           const next = world.fields.nextPressure[idx];
+          if (next !== pressure[idx]) {
+            changedCells += 1;
+            chunkChanged = true;
+          } else {
+            unchangedCells += 1;
+          }
           pressure[idx] = next;
           pressureTotal += next;
         }
       }
       chunk.summary.pressure = pressureTotal;
       markChunkProjectionDirty(world.chunks, chunk.id, CHUNK_DIRTY.pressure);
+      if (chunkChanged) {
+        changedChunks += 1;
+      } else {
+        unchangedChunks += 1;
+      }
     }
   });
+  profile?.recordValue("core.diffusion.changedCells", changedCells);
+  profile?.recordValue("core.diffusion.unchangedCells", unchangedCells);
+  profile?.recordValue("core.diffusion.changedChunks", changedChunks);
+  profile?.recordValue("core.diffusion.unchangedChunks", unchangedChunks);
   profile?.recordValue("core.dirty.pressureAfterDiffusion", countProjectionDirtyMask(world, CHUNK_DIRTY.pressure));
   profile?.recordValue("core.dirty.moistureAfterDiffusion", countProjectionDirtyMask(world, CHUNK_DIRTY.moisture));
 
@@ -272,6 +310,17 @@ function countProjectionDirtyMask(world: WorldState, mask: number): number {
     }
   }
   return count;
+}
+
+function countChunkCells(chunks: ChunkRecord[], chunkIds: Set<number>): number {
+  let cells = 0;
+  for (const chunkId of chunkIds) {
+    const chunk = chunks[chunkId];
+    if (chunk) {
+      cells += chunk.width * chunk.height;
+    }
+  }
+  return cells;
 }
 
 function terrainMoistureVisuallyChanged(moistureBase: number, beforeDelta: number, afterDelta: number): boolean {
