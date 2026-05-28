@@ -8,6 +8,7 @@ import {
 } from "../src/app/render/renderDependencies";
 import { CHUNK_DIRTY, clearChunkProjectionDirty, markChunkProjectionDirty, Simulation } from "../src/core/primordia";
 import { environmentEventDirtyMask, environmentProcessDirtyMask } from "../src/core/world/update";
+import { updateEnvironmentFields } from "../src/core/world/update";
 import type { EnvironmentEventRecord, EnvironmentProcessRecord } from "../src/core/primordia";
 
 describe("visibility-aware projection invalidation", () => {
@@ -120,6 +121,30 @@ describe("visibility-aware projection invalidation", () => {
     expect(environmentProcessDirtyMask(createMoistureFront())).toBe(
       CHUNK_DIRTY.process | CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure | CHUNK_DIRTY.moisture
     );
+  });
+
+  it("does not mark terrain moisture dirty when environment decay has no visual moisture change", () => {
+    const sim = createCleanProjectionSimulation();
+
+    updateEnvironmentFields(sim.world, sim.config, 1, sim.random);
+
+    for (const chunk of sim.world.chunks.chunks) {
+      expect(chunk.projectionDirtyMask & CHUNK_DIRTY.moisture).toBe(0);
+      expect(chunk.projectionDirtyMask & CHUNK_DIRTY.resource).toBe(CHUNK_DIRTY.resource);
+      expect(chunk.projectionDirtyMask & CHUNK_DIRTY.pressure).toBe(CHUNK_DIRTY.pressure);
+    }
+  });
+
+  it("marks terrain moisture dirty when environment decay changes the projected terrain tint", () => {
+    const sim = createCleanProjectionSimulation();
+    const target = sim.world.chunks.chunks[0];
+    const idx = target.startY * sim.width + target.startX;
+    sim.world.terrain.moistureBase[idx] = 0.2;
+    sim.world.fields.moistureDelta[idx] = 1;
+
+    updateEnvironmentFields(sim.world, sim.config, 1, sim.random);
+
+    expect(target.projectionDirtyMask & CHUNK_DIRTY.moisture).toBe(CHUNK_DIRTY.moisture);
   });
 });
 

@@ -23,6 +23,14 @@ export interface EnvironmentUpdateResult {
   process: EnvironmentProcessRecord | null;
 }
 
+interface EnvironmentChunkUpdateResult {
+  dirtyMask: number;
+  updatedCells: number;
+}
+
+const TERRAIN_MOISTURE_VISUAL_SCALE = 0.22;
+const TERRAIN_MOISTURE_VISUAL_STEP = 1 / 255;
+
 export function updateWorld(
   world: WorldState,
   config: SimulationConfig,
@@ -92,13 +100,10 @@ export function updateEnvironmentFields(
 
       const elapsed = Math.max(1, tick - chunk.lastUpdatedTick);
       const isCatchUp = chunk.activity !== "active" && elapsed > 1;
+      const result = updateEnvironmentChunk(world, config, cap, chunk, elapsed, isCatchUp);
       updatedChunks += 1;
-      updatedCells += updateEnvironmentChunk(world, config, cap, chunk, elapsed, isCatchUp);
-      markChunkProjectionDirty(
-        world.chunks,
-        chunk.id,
-        CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure | CHUNK_DIRTY.moisture
-      );
+      updatedCells += result.updatedCells;
+      markChunkProjectionDirty(world.chunks, chunk.id, result.dirtyMask);
       if (isCatchUp) {
         catchUpFieldUpdates += 1;
       } else {
@@ -136,7 +141,8 @@ function updateEnvironmentChunk(
   chunk: ChunkRecord,
   elapsed: number,
   isCatchUp: boolean
-): number {
+): EnvironmentChunkUpdateResult {
+  let dirtyMask = CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure;
   let updatedCells = 0;
   const steps = isCatchUp ? Math.min(elapsed, Math.max(1, Math.floor(config.sleepingChunkInterval))) : 1;
   for (let y = chunk.startY; y < chunk.endY; y += 1) {
@@ -168,14 +174,18 @@ function updateEnvironmentChunk(
         0,
         4
       );
+      const moistureBefore = world.fields.moistureDelta[i];
       world.fields.moistureDelta[i] *= Math.pow(0.985, steps);
       if (world.fields.moistureDelta[i] < 0.0001) {
         world.fields.moistureDelta[i] = 0;
       }
+      if (terrainMoistureVisuallyChanged(world.terrain.moistureBase[i], moistureBefore, world.fields.moistureDelta[i])) {
+        dirtyMask |= CHUNK_DIRTY.moisture;
+      }
       updatedCells += 1;
     }
   }
-  return updatedCells;
+  return { dirtyMask, updatedCells };
 }
 
 export function diffusePressure(
@@ -262,6 +272,21 @@ function countProjectionDirtyMask(world: WorldState, mask: number): number {
     }
   }
   return count;
+}
+
+function terrainMoistureVisuallyChanged(moistureBase: number, beforeDelta: number, afterDelta: number): boolean {
+  if (beforeDelta === afterDelta) {
+    return false;
+  }
+
+  const beforeBucket = terrainMoistureVisualBucket(moistureBase, beforeDelta);
+  const afterBucket = terrainMoistureVisualBucket(moistureBase, afterDelta);
+  return beforeBucket !== afterBucket;
+}
+
+function terrainMoistureVisualBucket(moistureBase: number, moistureDelta: number): number {
+  const amount = Math.min(1, moistureBase + moistureDelta * TERRAIN_MOISTURE_VISUAL_SCALE);
+  return Math.floor(amount / TERRAIN_MOISTURE_VISUAL_STEP);
 }
 
 function pressureForDiffusionNeighbor(

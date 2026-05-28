@@ -56,6 +56,7 @@ export function createProjection(
   const selectChunksMs = profile ? profile.now() - selectStart : 0;
   const chunks = selection.chunks;
   let projectedCells = 0;
+  const dirtyStats = profile ? countProjectionDirtyStats(sim.world.chunks.chunks) : null;
   const paintStart = profile?.now() ?? 0;
 
   for (const chunk of chunks) {
@@ -74,15 +75,14 @@ export function createProjection(
   const paintCellsMs = profile ? profile.now() - paintStart : 0;
 
   if (profile) {
-    const dirtyStats = countProjectionDirtyStats(sim.world.chunks.chunks);
     profile.recordProjection({
-      dirtyMaskChunks: dirtyStats.dirtyMaskChunks,
+      dirtyMaskChunks: dirtyStats?.dirtyMaskChunks ?? 0,
       fullRebuild: !canReuse,
-      moistureDirtyChunks: dirtyStats.moistureDirtyChunks,
+      moistureDirtyChunks: dirtyStats?.moistureDirtyChunks ?? 0,
       projectedCells,
       projectedChunks: chunks.length,
-      pressureDirtyChunks: dirtyStats.pressureDirtyChunks,
-      resourceDirtyChunks: dirtyStats.resourceDirtyChunks,
+      pressureDirtyChunks: dirtyStats?.pressureDirtyChunks ?? 0,
+      resourceDirtyChunks: dirtyStats?.resourceDirtyChunks ?? 0,
       selectChunksMs,
       paintCellsMs,
       totalChunks: sim.world.chunks.chunks.length,
