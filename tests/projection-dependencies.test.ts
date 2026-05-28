@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_OVERLAYS } from "../src/app/render/mapViewTypes";
-import { selectProjectionChunks } from "../src/app/render/projection";
+import { createProjection, selectProjectionChunks, type ProjectionProfileStats } from "../src/app/render/projection";
 import {
   overlayAffectsProjection,
   projectionDependencyMask,
   projectionOverlayKey
 } from "../src/app/render/renderDependencies";
-import { CHUNK_DIRTY, clearChunkProjectionDirty, markChunkProjectionDirty, Simulation } from "../src/core/primordia";
+import {
+  CHUNK_DIRTY,
+  clearChunkProjectionDirty,
+  markChunkProjectionDirty,
+  Simulation,
+  touchChunk
+} from "../src/core/primordia";
 import { environmentEventDirtyMask, environmentProcessDirtyMask } from "../src/core/world/update";
 import { updateEnvironmentFields } from "../src/core/world/update";
 import type { EnvironmentEventRecord, EnvironmentProcessRecord } from "../src/core/primordia";
@@ -126,12 +132,13 @@ describe("visibility-aware projection invalidation", () => {
   it("does not mark terrain moisture dirty when environment decay has no visual moisture change", () => {
     const sim = createCleanProjectionSimulation();
     for (const chunk of sim.world.chunks.chunks) {
-      chunk.dirtyMask = CHUNK_DIRTY.resource;
+      touchChunk(sim.world.chunks, chunk.id, 1, CHUNK_DIRTY.resource);
     }
 
     updateEnvironmentFields(sim.world, sim.config, 1, sim.random);
 
     for (const chunk of sim.world.chunks.chunks) {
+      expect(chunk.fieldDirtyMask).toBe(0);
       expect(chunk.projectionDirtyMask & CHUNK_DIRTY.moisture).toBe(0);
       expect(chunk.projectionDirtyMask & CHUNK_DIRTY.resource).toBe(CHUNK_DIRTY.resource);
       expect(chunk.projectionDirtyMask & CHUNK_DIRTY.pressure).toBe(CHUNK_DIRTY.pressure);
@@ -144,11 +151,52 @@ describe("visibility-aware projection invalidation", () => {
     const idx = target.startY * sim.width + target.startX;
     sim.world.terrain.moistureBase[idx] = 0.2;
     sim.world.fields.moistureDelta[idx] = 1;
-    target.dirtyMask = CHUNK_DIRTY.resource;
+    touchChunk(sim.world.chunks, target.id, 1, CHUNK_DIRTY.resource);
 
     updateEnvironmentFields(sim.world, sim.config, 1, sim.random);
 
     expect(target.projectionDirtyMask & CHUNK_DIRTY.moisture).toBe(CHUNK_DIRTY.moisture);
+  });
+
+  it("consumes visible projection debt and retires hidden render debt without clearing core dirty domains", () => {
+    const sim = createCleanProjectionSimulation();
+    const visible = sim.world.chunks.chunks[0];
+    const hidden = sim.world.chunks.chunks[1];
+    const fieldWrite = sim.world.chunks.chunks[2];
+    markChunkProjectionDirty(sim.world.chunks, visible.id, CHUNK_DIRTY.moisture);
+    markChunkProjectionDirty(sim.world.chunks, hidden.id, CHUNK_DIRTY.resource | CHUNK_DIRTY.pressure);
+    fieldWrite.fieldWriteMask = CHUNK_DIRTY.pressure;
+    fieldWrite.summaryDirty = true;
+    fieldWrite.pressureDiffusionActive = true;
+    markChunkProjectionDirty(sim.world.chunks, fieldWrite.id, CHUNK_DIRTY.pressure);
+    const imageFactory = (width: number, height: number) =>
+      ({
+        width,
+        height,
+        data: new Uint8ClampedArray(width * height * 4)
+      }) as ImageData;
+    let latestStats: ProjectionProfileStats | null = null;
+
+    createProjection(sim, "terrain", { ...DEFAULT_OVERLAYS, resources: false, pressure: false }, null, {
+      imageFactory,
+      now: () => 0,
+      recordProjection: (stats) => {
+        latestStats = stats;
+      }
+    });
+
+    const stats = expectProjectionStats(latestStats);
+    expect(stats.projectedChunks).toBe(6);
+    expect(stats.dirtyMaskChunks).toBe(1);
+    expect(stats.hiddenDirtyChunks).toBe(2);
+    expect(stats.consumedDirtyChunks).toBe(1);
+    expect(stats.retiredDirtyChunks).toBe(2);
+    expect(stats.retainedDirtyChunks).toBe(0);
+    expect(hidden.projectionDirtyMask & (CHUNK_DIRTY.resource | CHUNK_DIRTY.pressure)).toBe(0);
+    expect(fieldWrite.projectionDirtyMask & CHUNK_DIRTY.pressure).toBe(0);
+    expect(fieldWrite.fieldWriteMask).toBe(CHUNK_DIRTY.pressure);
+    expect(fieldWrite.summaryDirty).toBe(true);
+    expect(fieldWrite.pressureDiffusionActive).toBe(true);
   });
 });
 
@@ -166,10 +214,16 @@ function createCleanProjectionSimulation(): Simulation {
     chunk.activity = "sleeping";
     chunk.agentCount = 0;
     chunk.dirtyMask = 0;
+    chunk.fieldDirtyMask = 0;
     clearChunkProjectionDirty(sim.world.chunks, chunk.id);
   }
 
   return sim;
+}
+
+function expectProjectionStats(stats: ProjectionProfileStats | null): ProjectionProfileStats {
+  expect(stats).not.toBeNull();
+  return stats as ProjectionProfileStats;
 }
 
 function createEvent(kind: EnvironmentEventRecord["kind"]): EnvironmentEventRecord {

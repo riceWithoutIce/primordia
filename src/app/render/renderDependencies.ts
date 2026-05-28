@@ -37,7 +37,7 @@ export function chunkAffectsProjection(chunk: ChunkRecord, dependencyMask: numbe
     return false;
   }
 
-  return Boolean((chunk.dirtyMask | chunk.projectionDirtyMask) & dependencyMask);
+  return Boolean(chunk.projectionDirtyMask & dependencyMask);
 }
 
 function baseLayerDependencyMask(baseLayer: BaseLayer): number {

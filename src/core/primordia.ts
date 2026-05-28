@@ -28,11 +28,13 @@ export {
   chunkIdForCell,
   chunkIdForIndex,
   clearChunkProjectionDirty,
+  consumeChunkProjectionDirty,
   countChunkActivities,
   createChunkGrid,
   createRegionGraph,
   markChunkProjectionDirty,
   markChunkSummaryDirty,
+  retireHiddenProjectionDirty,
   touchArea,
   touchCell,
   touchChunk

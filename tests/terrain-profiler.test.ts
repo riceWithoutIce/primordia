@@ -29,12 +29,16 @@ describe("terrain baseline profiler", () => {
     profiler.recordDuration("sim.step", 3);
     profiler.recordDuration("render.putImageData", 4);
     profiler.recordProjection({
+      consumedDirtyChunks: 1,
       dirtyMaskChunks: 2,
       fullRebuild: false,
+      hiddenDirtyChunks: 1,
       moistureDirtyChunks: 1,
       projectedCells: 1024,
       projectedChunks: 1,
       pressureDirtyChunks: 2,
+      retainedDirtyChunks: 0,
+      retiredDirtyChunks: 1,
       resourceDirtyChunks: 1,
       selectChunksMs: 0.2,
       paintCellsMs: 1.5,
@@ -50,7 +54,10 @@ describe("terrain baseline profiler", () => {
     expect(sample?.durations["sim.step"]?.p95).toBe(3);
     expect(sample?.durations["projection.paintCells"]?.p95).toBe(1.5);
     expect(sample?.values["projection.projectedChunks"]?.p95).toBe(1);
+    expect(sample?.values["projection.consumedDirtyChunks"]?.p95).toBe(1);
+    expect(sample?.values["projection.hiddenDirtyChunks"]?.p95).toBe(1);
     expect(sample?.values["projection.moistureDirtyChunks"]?.p95).toBe(1);
+    expect(sample?.values["projection.retiredDirtyChunks"]?.p95).toBe(1);
 
     const report = profiler.report(scenario, 1200);
     expect(report.kind).toBe("primordia.terrain-profile");

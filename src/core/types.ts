@@ -188,6 +188,7 @@ export interface ChunkSummary {
   regionId: number;
   activity: ChunkActivity;
   dirtyMask: number;
+  fieldDirtyMask: number;
   agentCount: number;
   resource: number;
   trace: number;
@@ -205,6 +206,7 @@ export interface ChunkRecord extends ChunkBounds {
   lastTouchedTick: number;
   activity: ChunkActivity;
   dirtyMask: number;
+  fieldDirtyMask: number;
   fieldWriteMask: number;
   projectionDirtyMask: number;
   summaryDirty: boolean;
@@ -486,6 +488,8 @@ export interface SnapshotChunkSummary {
   y: number;
   activity: ChunkActivity;
   dirtyMask: number;
+  fieldDirtyMask: number;
+  fieldWriteMask: number;
   agentCount: number;
   averageResource: number;
   averageTrace: number;

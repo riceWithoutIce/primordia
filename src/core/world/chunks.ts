@@ -64,6 +64,7 @@ export function createChunkGrid(config: SimulationConfig, terrain: StaticTerrain
         lastTouchedTick: 0,
         activity: "sleeping",
         dirtyMask: 0,
+        fieldDirtyMask: 0,
         fieldWriteMask: 0,
         projectionDirtyMask: CHUNK_DIRTY.all,
         summaryDirty: true,
@@ -217,11 +218,13 @@ export function touchChunk(grid: ChunkGrid, chunkId: number, tick: number, dirty
   if (!chunk) {
     return;
   }
+  const fieldMask = dirtyMask & FIELD_DIRTY_MASK;
   chunk.lastTouchedTick = Math.max(chunk.lastTouchedTick, tick);
   chunk.activity = "active";
   chunk.dirtyMask |= dirtyMask;
+  chunk.fieldDirtyMask |= fieldMask;
   chunk.projectionDirtyMask |= dirtyMask;
-  if (dirtyMask & CHUNK_DIRTY.pressure) {
+  if (fieldMask & CHUNK_DIRTY.pressure) {
     chunk.pressureDiffusionActive = true;
   }
   chunk.summaryDirty = true;
@@ -303,12 +306,12 @@ export function updateChunkActivity(
   const sleepTicks = Math.max(warmTicks + 1, Math.floor(sleepingInterval) * 4);
 
   for (const chunk of grid.chunks) {
-    if (allowInitialSleep && chunk.lastTouchedTick === 0 && chunk.agentCount === 0 && chunk.dirtyMask === 0) {
+    if (allowInitialSleep && chunk.lastTouchedTick === 0 && chunk.agentCount === 0 && chunk.dirtyMask === 0 && chunk.fieldDirtyMask === 0) {
       chunk.activity = "sleeping";
       continue;
     }
     const age = tick - chunk.lastTouchedTick;
-    if (chunk.agentCount > 0 || chunk.dirtyMask || age <= warmTicks) {
+    if (chunk.agentCount > 0 || chunk.dirtyMask || chunk.fieldDirtyMask || age <= warmTicks) {
       chunk.activity = "active";
     } else if (age <= sleepTicks) {
       chunk.activity = "warm";
@@ -319,17 +322,7 @@ export function updateChunkActivity(
 }
 
 export function chunkShouldUpdate(chunk: ChunkRecord, tick: number, warmInterval: number, sleepingInterval: number): boolean {
-  if (chunk.activity === "active" || chunk.dirtyMask) {
-    return true;
-  }
-
-  const elapsed = tick - chunk.lastUpdatedTick;
-  if (chunk.activity === "warm") {
-    const interval = Math.max(1, Math.floor(warmInterval));
-    return elapsed >= interval && scheduledChunkPhase(chunk, tick, interval);
-  }
-  const interval = Math.max(1, Math.floor(sleepingInterval));
-  return elapsed >= interval && scheduledChunkPhase(chunk, tick, interval);
+  return chunkFieldUpdateDecision(chunk, tick, warmInterval, sleepingInterval).shouldUpdate;
 }
 
 export function chunkFieldUpdateDecision(
@@ -338,7 +331,7 @@ export function chunkFieldUpdateDecision(
   warmInterval: number,
   sleepingInterval: number
 ): ChunkFieldUpdateDecision {
-  const hasFieldDirty = Boolean(chunk.dirtyMask & FIELD_DIRTY_MASK);
+  const hasFieldDirty = Boolean(chunk.fieldDirtyMask & FIELD_DIRTY_MASK);
   if (hasFieldDirty) {
     return {
       shouldUpdate: true,
@@ -420,6 +413,7 @@ export function refreshChunkSummary(
     activity: chunk.activity,
     dirtyMask: chunk.dirtyMask,
     agentCount: chunk.agentCount,
+    fieldDirtyMask: chunk.fieldDirtyMask,
     resource,
     trace,
     pressure,
@@ -439,6 +433,34 @@ export function clearChunkProjectionDirty(grid: ChunkGrid, chunkId: number): voi
     chunk.projectionDirtyMask = 0;
     chunk.projectionDirty = false;
   }
+}
+
+export function consumeChunkProjectionDirty(grid: ChunkGrid, chunkId: number, visibleDependencyMask: number): number {
+  const chunk = grid.chunks[chunkId];
+  if (!chunk) {
+    return 0;
+  }
+  const consumedMask = chunk.projectionDirtyMask & visibleDependencyMask;
+  chunk.projectionDirtyMask &= ~visibleDependencyMask;
+  chunk.projectionDirty = chunk.projectionDirtyMask !== 0;
+  return consumedMask;
+}
+
+export function retireHiddenProjectionDirty(grid: ChunkGrid, visibleDependencyMask: number): number {
+  let retiredChunks = 0;
+  const hiddenMask = CHUNK_DIRTY.all & ~visibleDependencyMask;
+
+  for (const chunk of grid.chunks) {
+    const retiredMask = chunk.projectionDirtyMask & hiddenMask;
+    if (!retiredMask) {
+      continue;
+    }
+    chunk.projectionDirtyMask &= ~hiddenMask;
+    chunk.projectionDirty = chunk.projectionDirtyMask !== 0;
+    retiredChunks += 1;
+  }
+
+  return retiredChunks;
 }
 
 export function clearChunkFieldWriteMasks(grid: ChunkGrid): void {
@@ -600,7 +622,7 @@ export function countChunkActivities(grid: ChunkGrid): Pick<
     if (chunk.activity === "active") {
       activeChunks += 1;
       const hasAgents = chunk.agentCount > 0 || Boolean(chunk.dirtyMask & CHUNK_DIRTY.agents);
-      const hasFieldDirty = Boolean(chunk.dirtyMask & FIELD_DIRTY_MASK);
+      const hasFieldDirty = Boolean(chunk.fieldDirtyMask & FIELD_DIRTY_MASK);
       if (hasAgents && hasFieldDirty) {
         activeMixedDirtyChunks += 1;
       } else if (hasAgents) {
@@ -613,7 +635,7 @@ export function countChunkActivities(grid: ChunkGrid): Pick<
     } else {
       sleepingChunks += 1;
     }
-    if (chunk.dirtyMask) {
+    if (chunk.dirtyMask || chunk.fieldDirtyMask) {
       dirtyChunks += 1;
     }
   }
@@ -649,6 +671,7 @@ function emptyChunkSummary(id: number): ChunkSummary {
     regionId: 0,
     activity: "active",
     dirtyMask: CHUNK_DIRTY.all,
+    fieldDirtyMask: CHUNK_DIRTY.all,
     agentCount: 0,
     resource: 0,
     trace: 0,

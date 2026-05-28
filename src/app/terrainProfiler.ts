@@ -39,6 +39,7 @@ export type TerrainProfilePhase =
   | "sim.step";
 
 export type TerrainProfileValue =
+  | "projection.consumedDirtyChunks"
   | "core.diffusion.changedCells"
   | "core.diffusion.changedChunks"
   | "core.diffusion.computedCells"
@@ -83,10 +84,13 @@ export type TerrainProfileValue =
   | "core.scheduler.warmFieldUpdateChunks"
   | "projection.dirtyMaskChunks"
   | "projection.fullRebuild"
+  | "projection.hiddenDirtyChunks"
   | "projection.moistureDirtyChunks"
   | "projection.pressureDirtyChunks"
   | "projection.projectedCells"
   | "projection.projectedChunks"
+  | "projection.retainedDirtyChunks"
+  | "projection.retiredDirtyChunks"
   | "projection.resourceDirtyChunks"
   | "runtime.backlogTicks"
   | "runtime.mode"
@@ -267,9 +271,13 @@ export class TerrainProfiler {
     this.recordValue("projection.projectedChunks", stats.projectedChunks);
     this.recordValue("projection.projectedCells", stats.projectedCells);
     this.recordValue("projection.fullRebuild", stats.fullRebuild ? 1 : 0);
+    this.recordValue("projection.consumedDirtyChunks", stats.consumedDirtyChunks);
     this.recordValue("projection.dirtyMaskChunks", stats.dirtyMaskChunks);
+    this.recordValue("projection.hiddenDirtyChunks", stats.hiddenDirtyChunks);
     this.recordValue("projection.moistureDirtyChunks", stats.moistureDirtyChunks);
     this.recordValue("projection.pressureDirtyChunks", stats.pressureDirtyChunks);
+    this.recordValue("projection.retainedDirtyChunks", stats.retainedDirtyChunks);
+    this.recordValue("projection.retiredDirtyChunks", stats.retiredDirtyChunks);
     this.recordValue("projection.resourceDirtyChunks", stats.resourceDirtyChunks);
   }
 

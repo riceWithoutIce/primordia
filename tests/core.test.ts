@@ -190,6 +190,7 @@ describe("typed simulation core", () => {
     for (const chunk of sim.world.chunks.chunks) {
       chunk.activity = "sleeping";
       chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
       chunk.fieldWriteMask = 0;
       chunk.projectionDirtyMask = 0;
       chunk.projectionDirty = false;
@@ -206,9 +207,11 @@ describe("typed simulation core", () => {
     agentOnly.agentCount = 1;
     agentOnly.summary.agentCount = 1;
     fieldOnly.dirtyMask = CHUNK_DIRTY.trace;
+    fieldOnly.fieldDirtyMask = CHUNK_DIRTY.trace;
     mixed.agentCount = 1;
     mixed.summary.agentCount = 1;
     mixed.dirtyMask = CHUNK_DIRTY.resource;
+    mixed.fieldDirtyMask = CHUNK_DIRTY.resource;
     const movedAwayAgentDirty = sim.world.chunks.chunks[3];
     movedAwayAgentDirty.dirtyMask = CHUNK_DIRTY.agents;
 
@@ -235,6 +238,7 @@ describe("typed simulation core", () => {
     for (const chunk of sim.world.chunks.chunks) {
       chunk.activity = "sleeping";
       chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
       chunk.projectionDirtyMask = 0;
       chunk.projectionDirty = false;
       chunk.pressureDiffusionActive = false;
@@ -285,6 +289,7 @@ describe("typed simulation core", () => {
     for (const record of sim.world.chunks.chunks) {
       record.activity = "sleeping";
       record.dirtyMask = 0;
+      record.fieldDirtyMask = 0;
       record.fieldWriteMask = 0;
       record.projectionDirtyMask = 0;
       record.projectionDirty = false;
@@ -299,6 +304,7 @@ describe("typed simulation core", () => {
     sim.leaveTrace(agent, 0);
 
     expect(chunk.dirtyMask).toBe(0);
+    expect(chunk.fieldDirtyMask).toBe(0);
     expect(chunk.fieldWriteMask & CHUNK_DIRTY.trace).toBe(CHUNK_DIRTY.trace);
     expect(chunk.projectionDirtyMask & CHUNK_DIRTY.trace).toBe(CHUNK_DIRTY.trace);
 
@@ -329,6 +335,7 @@ describe("typed simulation core", () => {
     for (const chunk of sim.world.chunks.chunks) {
       chunk.activity = "sleeping";
       chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
       chunk.projectionDirtyMask = 0;
       chunk.projectionDirty = false;
       chunk.pressureDiffusionActive = false;
@@ -339,6 +346,7 @@ describe("typed simulation core", () => {
     const sourceChunk = sim.world.chunks.chunks[sim.world.chunks.cellToChunk[source]];
     sim.pressure[source] = 4;
     sourceChunk.dirtyMask = CHUNK_DIRTY.pressure;
+    sourceChunk.fieldDirtyMask = CHUNK_DIRTY.pressure;
     sourceChunk.pressureDiffusionActive = true;
 
     sim.updateEnvironment();
@@ -368,6 +376,7 @@ describe("typed simulation core", () => {
     for (const chunk of sim.world.chunks.chunks) {
       chunk.activity = "sleeping";
       chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
       chunk.projectionDirtyMask = 0;
       chunk.projectionDirty = false;
       chunk.pressureDiffusionActive = false;
@@ -400,6 +409,7 @@ describe("typed simulation core", () => {
     for (const chunk of sim.world.chunks.chunks) {
       chunk.activity = "sleeping";
       chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
       chunk.projectionDirtyMask = 0;
       chunk.projectionDirty = false;
       chunk.pressureDiffusionActive = false;
@@ -407,6 +417,7 @@ describe("typed simulation core", () => {
 
     for (const chunk of sim.world.chunks.chunks.slice(0, 10)) {
       chunk.dirtyMask = CHUNK_DIRTY.pressure;
+      chunk.fieldDirtyMask = CHUNK_DIRTY.pressure;
       chunk.pressureDiffusionActive = true;
       sim.pressure[chunk.startY * sim.width + chunk.startX] = 4;
     }
@@ -1224,6 +1235,7 @@ describe("typed simulation core", () => {
     for (const chunk of sim.world.chunks.chunks) {
       chunk.activity = "sleeping";
       chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
     }
     sim.world.chunks.chunks[1].activity = "active";
 
@@ -1436,6 +1448,7 @@ describe("typed simulation core", () => {
     const harvestChunk = highHarvest.world.chunks.chunks[highHarvest.world.chunks.cellToChunk[idx]];
     highHarvest.resources[idx] = GENOME_BOUNDS.harvestRate.max;
     harvestChunk.dirtyMask = 0;
+    harvestChunk.fieldDirtyMask = 0;
     harvestChunk.fieldWriteMask = 0;
     harvestChunk.projectionDirtyMask = 0;
     harvestChunk.projectionDirty = false;
@@ -1446,6 +1459,7 @@ describe("typed simulation core", () => {
 
     expect(highHarvest.pressure[idx]).toBeGreaterThan(pressureBeforeHarvest);
     expect(harvestChunk.dirtyMask & CHUNK_DIRTY.pressure).toBe(0);
+    expect(harvestChunk.fieldDirtyMask & CHUNK_DIRTY.pressure).toBe(0);
     expect(harvestChunk.fieldWriteMask & CHUNK_DIRTY.pressure).toBe(CHUNK_DIRTY.pressure);
     expect(harvestChunk.pressureDiffusionActive).toBe(true);
 
@@ -1469,6 +1483,7 @@ describe("typed simulation core", () => {
     exhausted.resources[exhaustedIdx] = 0;
     const pressureBeforeExhaustedHarvest = exhausted.pressure[exhaustedIdx];
     exhaustedChunk.dirtyMask = 0;
+    exhaustedChunk.fieldDirtyMask = 0;
     exhaustedChunk.fieldWriteMask = 0;
     exhaustedChunk.projectionDirtyMask = 0;
     exhaustedChunk.projectionDirty = false;
@@ -1479,6 +1494,7 @@ describe("typed simulation core", () => {
     expect(exhaustedHarvest).toBe(0);
     expect(exhausted.pressure[exhaustedIdx]).toBe(pressureBeforeExhaustedHarvest);
     expect(exhaustedChunk.dirtyMask & CHUNK_DIRTY.resource).toBe(0);
+    expect(exhaustedChunk.fieldDirtyMask & CHUNK_DIRTY.resource).toBe(0);
     expect(exhaustedChunk.fieldWriteMask & CHUNK_DIRTY.resource).toBe(CHUNK_DIRTY.resource);
     expect(exhaustedChunk.dirtyMask & CHUNK_DIRTY.pressure).toBe(0);
     expect(exhaustedChunk.pressureDiffusionActive).toBe(false);

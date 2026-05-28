@@ -205,6 +205,7 @@ export function updateEnvironmentFields(
       }
       chunk.lastUpdatedTick = tick;
       chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
       refreshChunkSummary(world.chunks, chunk, world.terrain, world.fields, world.width);
       summaryRefreshChunks += 1;
     }
@@ -406,11 +407,11 @@ export function diffusePressure(
       if (explicitSourceChunkIds && !explicitSourceChunkIds.has(chunk.id)) {
         continue;
       }
-      if (!explicitSourceChunkIds && world.size > LARGE_WORLD_CELL_LIMIT && chunk.activity === "sleeping" && !chunk.dirtyMask) {
+      if (!explicitSourceChunkIds && world.size > LARGE_WORLD_CELL_LIMIT && chunk.activity === "sleeping" && !chunk.fieldDirtyMask) {
         skippedSleepingChunks += 1;
         continue;
       }
-      if (chunk.summary.pressure <= 0.0001 && !chunk.dirtyMask) {
+      if (chunk.summary.pressure <= 0.0001 && !chunk.fieldDirtyMask) {
         nearZeroCandidateChunks += 1;
       }
       if (
@@ -589,7 +590,7 @@ function selectPressureDiffusionSourceChunks(world: WorldState, tick: number): S
   const interval = PRESSURE_DIFFUSION_BACKGROUND_INTERVAL;
 
   for (const chunk of world.chunks.chunks) {
-    if (chunk.pressureDiffusionActive || chunk.dirtyMask & CHUNK_DIRTY.pressure) {
+    if (chunk.pressureDiffusionActive || chunk.fieldDirtyMask & CHUNK_DIRTY.pressure) {
       sourceChunkIds.add(chunk.id);
     }
   }

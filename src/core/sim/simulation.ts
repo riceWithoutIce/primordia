@@ -887,7 +887,10 @@ export class Simulation {
 
   snapshotChunks(options: ExperimentSnapshotOptions = {}): SnapshotChunkSummary[] {
     return this.world.chunks.chunks
-      .filter((chunk) => options.includeAllChunks || chunk.activity !== "sleeping" || chunk.dirtyMask || chunk.agentCount > 0)
+      .filter(
+        (chunk) =>
+          options.includeAllChunks || chunk.activity !== "sleeping" || chunk.dirtyMask || chunk.fieldDirtyMask || chunk.agentCount > 0
+      )
       .map((chunk) => {
         const cells = Math.max(1, chunk.width * chunk.height);
         const summary = chunk.summary;
@@ -898,6 +901,8 @@ export class Simulation {
           y: chunk.y,
           activity: chunk.activity,
           dirtyMask: chunk.dirtyMask,
+          fieldDirtyMask: chunk.fieldDirtyMask,
+          fieldWriteMask: chunk.fieldWriteMask,
           agentCount: chunk.agentCount,
           averageResource: roundSnapshotValue(summary.resource / cells),
           averageTrace: roundSnapshotValue(summary.trace / cells),

@@ -13,12 +13,13 @@ Update 2026-05-28:
 - The latest terrain-only deep profile from `C:/Users/admin/Desktop/profile.txt` supersedes the older projection-feedback profile below. Projection repaint is no longer the dominant 371ms hotspot; the current structural bottleneck is `agent/chunk activity -> field chunk updates -> pressure diffusion -> backlog`.
 - Phase 2.3.22 first pass is implemented locally: agent occupancy and agent-only movement dirtiness no longer force immediate full environment field scans. Field updates now key off field dirty bits or warm/sleeping cadence, and scheduler diagnostics separate agent-only, field-dirty, and mixed active chunks.
 - Phase 2.3.23 first pass is implemented locally: direct agent field writes now use a separate `fieldWriteMask` path for projection, summary, and pressure-frontier observability instead of putting the chunk into the immediate full-field update lane. This is the first practical trace/resource/pressure sub-lane split.
+- Phase 2.3.24 starts the dirty-domain split: chunks now carry `fieldDirtyMask` for environment field-lane work, `fieldWriteMask` for direct agent/organ writes, `summaryDirty` for aggregate refresh, `pressureDiffusionActive` for pressure frontier continuation, and `projectionDirtyMask` for render-cache invalidation only. Terrain projection consumes visible moisture debt and retires hidden resource/pressure render debt without clearing core field-write, summary, or diffusion-frontier state.
 
 ## Current State
 
 Phase 2.3 large-world framework is accepted as a foundation, but Phase 2.3.x is now focused on structural scheduling and profiling rather than narrow rendering patches.
 
-Local state is ahead of GitHub Project status:
+GitHub Project 5 now reflects the active Phase 2.3.x items. The local branch is ahead of origin while today's closeout candidate is being committed:
 
 - `987bde0` - `Optimize terrain moisture dirty invalidation`
 - `067ac44` - `Add core simulation profile counters`
@@ -27,7 +28,8 @@ Local state is ahead of GitHub Project status:
 Recent committed Phase 2.3.x work:
 
 - `c8988cf` - `Tighten Phase 2.3 scheduler lanes`
-- current local candidate - direct field write lane split; should be committed after verification
+- `341496f` - `Split direct agent field writes`
+- closeout candidate - `Split dirty domains for projection and field lanes`
 
 The profiler is off by default. It only runs when the app URL includes `?profile=terrain`; deep core timing is enabled with `profileDetail=deep` or `profile=terrain-deep`.
 
@@ -47,6 +49,8 @@ copy(document.getElementById("terrain-profile-report").textContent)
 
 Source: `C:/Users/admin/Desktop/profile.txt`
 
+This is the full 30 second terrain-only deep profile after the Phase 2.3.24 dirty-domain split.
+
 Scenario:
 
 - terrain base layer
@@ -58,34 +62,32 @@ Scenario:
 
 Assessment failed:
 
-- `sim.step p50`: `49.3ms` vs target `24ms`
-- `sim.step p95`: `56.9ms` vs target `33ms`
-- `runtime.backlogTicks p95`: `7.0` vs target `3`
-- `render.total p95`: `19.5ms` vs target `8ms`
+- `sim.step p50`: `28.5ms` vs target `24ms`
+- `sim.step p95`: `47.7ms` vs target `33ms`
+- `runtime.backlogTicks p95`: `1.0` vs target `3`
+- `render.total p95`: `18.7ms` vs target `8ms`
 
 Main readings:
 
-- `core.tick.updateWorld p50`: about `39.3ms`
-- `core.world.environmentChunks p50`: about `30.8ms`
-- `core.world.diffusePressure p50`: about `8.3ms`
-- `core.diffusion.compute p50`: about `7.2ms`
-- `core.tick.agents p50`: about `4.4ms`
-- `core.tick.refreshAgentChunks p50`: about `5.5ms`
-- `projection.paintCells p95`: about `18.7ms`
-- `render.projection.total p95`: about `18.7ms`
+- `core.tick.updateWorld p50/p95`: about `19.3ms / 38.8ms`
+- `core.world.environmentChunks p50/p95`: about `10.9ms / 29.7ms`
+- `core.world.diffusePressure p50/p95`: about `8.0ms / 13.5ms`
+- `core.diffusion.compute p50/p95`: about `7.0ms / 11.3ms`
+- `core.tick.agents p50/p95`: about `4.0ms / 4.7ms`
+- `core.tick.refreshAgentChunks p50/p95`: about `5.1ms / 5.7ms`
+- `projection.paintCells p95`: about `17.9ms`
+- `render.projection.total p95`: about `18.0ms`
 
 Current interpretation:
 
 - Agent behavior itself is not the main hotspot.
-- Terrain projection has improved enough that it is no longer the first structural target, though it still misses the render budget late in the run.
-- The dominant design smell is that chunk activity still couples agent presence, field work, summary refresh, pressure diffusion, and projection invalidation too tightly.
-- The top suspected chain is:
-  1. agent presence or agent field writes make chunks active/dirty
-  2. active chunks run full field updates across resource/trace/pressure/moisture
-  3. field updates and pressure diffusion keep many chunks participating
-  4. one logical tick costs about 50ms
-  5. the browser can throttle tick batches, but cannot split a single expensive tick
-  6. backlog stabilizes near the cap instead of clearing
+- The browser scheduler/backlog pass is working; backlog is stable and no longer the active failure.
+- The agent/field, direct-write, and dirty-domain splits cut the old `~49ms` tick cost down to about `28-30ms` p50, but the tick still misses the `24ms` p50 target and has a high p95 tail.
+- The current structural smells are now narrower:
+  1. warm/sleeping field catch-up still updates around `80k-110k` cells per tick
+  2. pressure diffusion still computes around `120k-131k` cells per tick through a bounded scan rather than a true frontier
+  3. terrain projection repaints only around `25-30` chunks late in the profile, but those repaints still cost around `19ms` p95
+  4. hidden resource/pressure projection debt is now retired correctly: `projection.retainedDirtyChunks p95` is `0`
 
 ## Structural Refactor Plan
 
@@ -113,23 +115,60 @@ Completed first-pass queue:
    `agentCount -> chunk active -> environmentChunks full scan -> dirty projection/diffusion -> backlog`.
 4. The first semantic-preserving split is implemented:
    agent-occupied and agent-only dirty chunks can stay agent-active without forcing immediate field-active scans.
+5. Direct field writes are separated from full environment scans through `fieldWriteMask`.
+6. Dirty domains are now partially separated through `fieldDirtyMask`, `fieldWriteMask`, `summaryDirty`, `pressureDiffusionActive`, and visible-dependency projection consumption.
 
-Next validation queue:
+End-of-day boundary:
 
-1. Run `npm run check` and `npm run build` after any final local edits.
-2. Capture a new terrain-only deep profile and compare `core.world.environmentChunks`, `activeAgentOnlyChunks`, `activeEnvironmentChunks`, `activeMixedDirtyChunks`, `directFieldWriteChunks`, `directTraceWriteChunks`, `updatedChunks`, `sim.step`, and backlog.
-3. Then run a pressure-visible deep profile before closing #71/#75.
+1. Today's closeout is Phase 2.3.24 only: dirty domains are split and projection hidden debt is retired without clearing simulation dirty domains.
+2. Do not mix the next pressure-frontier implementation into this commit.
+3. The full 30s terrain-only profile is now captured and recorded; it proves the render-debt leak is fixed but exposes the next bottlenecks.
+
+Tomorrow queue:
+
+1. Continue under #71 as Phase 2.3.25 pressure frontier diffusion. Target `core.diffusion.selectedChunks p95 = 128`, `computedCells p95 = 131072`, and `deferredChunks p95 = 213`.
+2. Keep #75 as the acceptance evidence task until terrain-only and pressure-visible deep profiles both pass or have explicit follow-up issues.
+3. If pressure-frontier work does not bring `sim.step` under budget, inspect warm/sleeping catch-up cadence next.
+4. Track terrain projection fast-path separately: late-run `25-27` visible terrain chunks costing `18-19ms` is suspicious, but it is secondary to core tick pressure.
 
 ## Latest Local Node Benchmark
 
-After the direct field write split, `npm run bench:core` produced:
+After the dirty-domain split, `npm run bench:core` produced:
 
-- `960x640 initialize`: mean about `3139.44ms`
-- `960x640 cold step(16)`: mean about `3576.43ms`
-- `960x640 hot step(16)`: mean about `664.68ms`
-- `960x640 hot snapshot stride 48`: mean about `3.2737ms`
+- `960x640 initialize`: mean about `3076.92ms`
+- `960x640 cold step(16)`: mean about `3588.09ms`
+- `960x640 hot step(16)`: mean about `646.12ms`
+- `960x640 hot snapshot stride 48`: mean about `3.1980ms`
 
-Interpretation: the Node hot-step benchmark improved substantially from the previous local `~1012ms` hot `step(16)`. Browser terrain deep profile is still required because backlog and render projection are browser-specific.
+Validation in this pass:
+
+- `npm run check`: passed, `87` tests.
+- `npm run build`: passed.
+- `npm run bench:core`: completed with the benchmark above.
+- Browser terrain-only deep smoke profile at `http://127.0.0.1:5175/?profile=terrain&profileDetail=deep&profileSeconds=10` completed after Phase 2.3.24:
+  - `render.total p95`: about `1.5ms`
+  - `projection.paintCells p95`: `0ms` after the initial full rebuild
+  - `projection.projectedChunks p95`: `0`
+  - `projection.hiddenDirtyChunks p95`: about `218`
+  - `projection.retiredDirtyChunks p95`: about `218`
+  - `projection.retainedDirtyChunks p95`: `0`
+  - `runtime.backlogTicks p95`: about `0.9`
+  - `sim.step p50/p95`: about `25.7ms / 43.4ms`
+  - `core.diffusion.selectedChunks p95`: `128`
+- Full 30s browser terrain-only deep profile from `C:/Users/admin/Desktop/profile.txt` completed after Phase 2.3.24:
+  - `sim.step p50/p95`: `28.5ms / 47.7ms`
+  - `runtime.backlogTicks p95`: `1.0`
+  - `render.total p95`: `18.7ms`
+  - `projection.projectedChunks p95`: `25`
+  - `projection.hiddenDirtyChunks p95`: `259`
+  - `projection.retiredDirtyChunks p95`: `259`
+  - `projection.retainedDirtyChunks p95`: `0`
+  - `core.world.updatedChunks p95`: `108`
+  - `core.world.updatedCells p95`: `110592`
+  - `core.diffusion.selectedChunks p95`: `128`
+  - `core.diffusion.computedCells p95`: `131072`
+
+Interpretation: the Node hot-step benchmark did not regress after the dirty-domain split. The browser smoke profile confirms hidden resource/pressure render debt is retired instead of retained across terrain-only frames, and render p95 drops sharply versus the previous `~19ms` profile. Simulation tick p95 still fails, with pressure diffusion still selecting the full `128` chunk budget, so the next structural target should be pressure-frontier diffusion rather than more projection invalidation work.
 
 ## Historical Profile Superseded By Current Baseline
 
@@ -187,21 +226,28 @@ The previous immediate bugfix and moisture dirty precision work have effectively
 
 Pressure diffusion remains a core compute hotspot, but should be treated as a lane/frontier design problem:
 
-- current `core.world.diffusePressure p50`: about `8.3ms`
-- current `core.world.diffusePressure p95`: about `13.8ms`
+- current `core.world.diffusePressure p50`: about `8.0ms`
+- current `core.world.diffusePressure p95`: about `13.5ms`
 - current `core.diffusion.selectedChunks p95`: `128`
-- current `core.diffusion.deferredChunks p95`: `211`
+- current `core.diffusion.deferredChunks p95`: `213`
 - current `core.diffusion.nearZeroSkippedChunks p95`: `0`
 
-Investigate diffusion after the agent/field activity split, because reducing unnecessary field-active chunks may also reduce pressure frontier pressure.
+Tomorrow's first design target should be a true pressure frontier:
+
+- keep direct pressure writes and `pressureDiffusionActive` as the seed domain
+- expand to neighbors only while meaningful pressure delta exists
+- avoid treating the bounded background slice as the main diffusion mechanism
+- keep deterministic replay stable for same seed/config/tick
+- continue refreshing only changed chunk/region summaries
+- keep render projection as a consumer of dirty state, not the owner of simulation debt
 
 ## GitHub Project Note
 
-Project 5 currently shows #71-#75 as Todo, but local code has already advanced #71-#74. Update the Project before further implementation:
+Closeout status checked on 2026-05-28:
 
-- #71: move to In progress; counters exist and pressure-lane tightening has begun.
-- #72: move to In progress; browser-safe scheduler telemetry exists locally.
-- #73: move to In progress; browser catch-up is bounded locally but still needs final validation.
-- #74: move to In progress; lane stats exist, but the agent/field split remains unresolved.
-- #75: keep Todo until new terrain-only and pressure-visible profiles are recorded.
-- Add new P0 issue: `Phase 2.3.22: Decouple agent activity from field updates`.
+- #71 is `In progress`; use it as the canonical tomorrow task for pressure-frontier diffusion.
+- #72 is `In progress`; browser-safe scheduler telemetry is implemented but remains part of active Phase 2.3.x tracking.
+- #73 is `In progress`; browser catch-up is bounded and backlog is stable in the latest terrain profile.
+- #74 is `In progress`; lane stats exist and continue to support the pressure-frontier work.
+- #75 remains `Todo`; use it for final scheduler/performance acceptance after terrain-only and pressure-visible evidence.
+- #76 is `In progress`; today's dirty-domain split resolves the largest design concern, but leave the item active until the next pressure profile confirms no hidden coupling remains.
