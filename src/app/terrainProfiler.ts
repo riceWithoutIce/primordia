@@ -42,7 +42,12 @@ export type TerrainProfileValue =
   | "core.diffusion.changedCells"
   | "core.diffusion.changedChunks"
   | "core.diffusion.computedCells"
+  | "core.diffusion.effectiveChunks"
+  | "core.diffusion.nearZeroCandidateChunks"
+  | "core.diffusion.nearZeroSkippedChunks"
+  | "core.diffusion.neighborChunks"
   | "core.diffusion.neighborExpansionChunks"
+  | "core.diffusion.seedChunks"
   | "core.diffusion.sourceChunks"
   | "core.diffusion.selectedChunks"
   | "core.diffusion.skippedSleepingChunks"
@@ -60,6 +65,11 @@ export type TerrainProfileValue =
   | "core.world.preciseUpdatedChunks"
   | "core.world.updatedCells"
   | "core.world.updatedChunks"
+  | "core.scheduler.activeEnvironmentChunks"
+  | "core.scheduler.sleepingCatchupChunks"
+  | "core.scheduler.summaryRefreshChunks"
+  | "core.scheduler.summaryRefreshRegions"
+  | "core.scheduler.warmEnvironmentChunks"
   | "projection.dirtyMaskChunks"
   | "projection.fullRebuild"
   | "projection.moistureDirtyChunks"
@@ -67,6 +77,11 @@ export type TerrainProfileValue =
   | "projection.projectedCells"
   | "projection.projectedChunks"
   | "projection.resourceDirtyChunks"
+  | "runtime.backlogTicks"
+  | "runtime.mode"
+  | "runtime.observedTickRate"
+  | "runtime.tickBudgetMs"
+  | "runtime.tickCapacity"
   | "ticksPerFrame";
 
 export interface TerrainProfileScenario {
@@ -278,7 +293,7 @@ export class TerrainProfiler {
     };
   }
 
-  private recordValue(name: TerrainProfileValue, value: number): void {
+  recordValue(name: TerrainProfileValue, value: number): void {
     appendValue(this.current.values, name, value);
     appendValue(this.total.values, name, value);
   }

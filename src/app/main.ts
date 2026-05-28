@@ -39,6 +39,11 @@ let overlays: OverlayState = { ...DEFAULT_OVERLAYS };
 let renderBuffer: HTMLCanvasElement | null = null;
 let renderBufferCtx: CanvasRenderingContext2D | null = null;
 let projectionCache: ProjectionCache | null = null;
+let observedTickRate = 0;
+let runtimeMode: RuntimeMode = "realtime";
+let lastRuntimeStatsAt = 0;
+let runtimeStatsTickCount = 0;
+let lastRuntimeTickCapacity = 0;
 const terrainProfiler = createTerrainProfilerFromSearch(window.location.search, {
   log: (message) => console.info(message)
 });
@@ -97,6 +102,9 @@ const metrics = {
   chunks: getElement<HTMLElement>("m-chunks"),
   chunkStates: getElement<HTMLElement>("m-chunk-states"),
   updatedChunks: getElement<HTMLElement>("m-updated-chunks"),
+  runtime: getElement<HTMLElement>("m-runtime"),
+  lanes: getElement<HTMLElement>("m-lanes"),
+  diffusion: getElement<HTMLElement>("m-diffusion"),
   regions: getElement<HTMLElement>("m-regions"),
   moisture: getElement<HTMLElement>("m-moisture"),
   energy: getElement<HTMLElement>("m-energy"),
@@ -109,6 +117,11 @@ const metrics = {
 };
 
 const TICK_RATES = [0.2, 0.5, 1, 2, 4, 8, 16, 32, 64] as const;
+const FRAME_SIMULATION_BUDGET_MS = 24;
+const MAX_TICKS_PER_FRAME = 2;
+const MAX_BACKLOG_TICKS = 8;
+
+type RuntimeMode = "realtime" | "catching-up" | "throttled";
 
 speed.addEventListener("input", () => {
   updateSpeedLabel();
@@ -121,6 +134,9 @@ toggle.addEventListener("click", () => {
 
 step.addEventListener("click", () => {
   sim.step(1);
+  observedTickRate = 0;
+  runtimeMode = "realtime";
+  lastRuntimeTickCapacity = 1;
   render();
 });
 
@@ -129,7 +145,9 @@ reset.addEventListener("click", () => {
     seed: Math.floor(Math.random() * 1000000)
   });
   sim.profileSink = terrainProfiler?.coreSink() ?? null;
-  tickAccumulator = 0;
+  resetRuntimeState();
+  lastFrameTime = 0;
+  lastProfileTickCount = sim.tickCount;
   running = true;
   toggle.textContent = "暂停";
   clearSnapshot();
@@ -414,6 +432,10 @@ function updateMetrics(m = sim.metrics()): void {
   metrics.chunks.textContent = String(m.chunkCount);
   metrics.chunkStates.textContent = `${m.activeChunks}/${m.warmChunks}/${m.sleepingChunks}`;
   metrics.updatedChunks.textContent = `${m.updatedChunks}/${m.updatedCells.toLocaleString("zh-CN")}`;
+  const scheduler = sim.world.chunks.schedulerStats;
+  metrics.runtime.textContent = `${runtimeMode} / ${observedTickRate.toFixed(1)} tick/s / backlog ${tickAccumulator.toFixed(1)}`;
+  metrics.lanes.textContent = `${scheduler.activeEnvironmentChunks}/${scheduler.warmEnvironmentChunks}/${scheduler.sleepingCatchupChunks}`;
+  metrics.diffusion.textContent = `${scheduler.diffusionEffectiveChunks}/${scheduler.diffusionSelectedChunks}`;
   metrics.regions.textContent = String(m.regionCount);
   metrics.moisture.textContent = formatTotal(m.totalMoisture);
   metrics.energy.textContent = m.averageEnergy.toFixed(1);
@@ -531,6 +553,54 @@ function recordProfileDuration(phase: TerrainProfilePhase, startedAt: number): v
   }
 }
 
+function resetRuntimeState(now = 0): void {
+  tickAccumulator = 0;
+  observedTickRate = 0;
+  runtimeMode = "realtime";
+  lastRuntimeStatsAt = now;
+  runtimeStatsTickCount = 0;
+  lastRuntimeTickCapacity = 0;
+}
+
+function updateRuntimeStats(now: number, ticks: number): void {
+  if (!lastRuntimeStatsAt) {
+    lastRuntimeStatsAt = now;
+    runtimeStatsTickCount = 0;
+    return;
+  }
+
+  runtimeStatsTickCount += ticks;
+  const elapsedMs = now - lastRuntimeStatsAt;
+  if (elapsedMs >= 1000) {
+    observedTickRate = runtimeStatsTickCount / (elapsedMs / 1000);
+    runtimeStatsTickCount = 0;
+    lastRuntimeStatsAt = now;
+  }
+}
+
+function recordRuntimeProfile(): void {
+  if (!terrainProfiler) {
+    return;
+  }
+
+  terrainProfiler.recordValue("runtime.backlogTicks", tickAccumulator);
+  terrainProfiler.recordValue("runtime.mode", runtimeModeCode(runtimeMode));
+  terrainProfiler.recordValue("runtime.observedTickRate", observedTickRate);
+  terrainProfiler.recordValue("runtime.tickBudgetMs", FRAME_SIMULATION_BUDGET_MS);
+  terrainProfiler.recordValue("runtime.tickCapacity", lastRuntimeTickCapacity);
+}
+
+function runtimeModeCode(mode: RuntimeMode): number {
+  switch (mode) {
+    case "realtime":
+      return 0;
+    case "catching-up":
+      return 1;
+    case "throttled":
+      return 2;
+  }
+}
+
 function maybeFlushTerrainProfile(now: number): void {
   if (!terrainProfiler) {
     return;
@@ -562,21 +632,49 @@ function advanceSimulation(now: number): void {
   if (running) {
     if (!lastFrameTime) {
       lastFrameTime = now;
+      runtimeMode = "realtime";
+      lastRuntimeTickCapacity = 0;
       return;
     }
 
     const elapsedSeconds = Math.min((now - lastFrameTime) / 1000, 0.5);
-    tickAccumulator += elapsedSeconds * tickRate();
-    const ticks = Math.floor(tickAccumulator);
+    const accruedTicks = tickAccumulator + elapsedSeconds * tickRate();
+    const backlogCapped = accruedTicks > MAX_BACKLOG_TICKS;
+    tickAccumulator = Math.min(MAX_BACKLOG_TICKS, accruedTicks);
+    const requestedTicks = Math.floor(tickAccumulator);
+    const tickCapacity = Math.min(requestedTicks, MAX_TICKS_PER_FRAME);
+    const budgetStart = performance.now();
+    let consumedTicks = 0;
 
-    if (ticks > 0) {
+    while (consumedTicks < tickCapacity) {
+      if (consumedTicks > 0 && performance.now() - budgetStart >= FRAME_SIMULATION_BUDGET_MS) {
+        break;
+      }
+
       const stepStart = profileNow();
-      sim.step(ticks);
+      sim.step(1);
       recordProfileDuration("sim.step", stepStart);
-      tickAccumulator -= ticks;
+      consumedTicks += 1;
+
+      if (performance.now() - budgetStart >= FRAME_SIMULATION_BUDGET_MS) {
+        break;
+      }
+    }
+
+    tickAccumulator = Math.max(0, tickAccumulator - consumedTicks);
+    lastRuntimeTickCapacity = tickCapacity;
+
+    if (backlogCapped || requestedTicks > MAX_TICKS_PER_FRAME) {
+      runtimeMode = "throttled";
+    } else if (tickAccumulator >= 1 || consumedTicks < requestedTicks) {
+      runtimeMode = "catching-up";
+    } else {
+      runtimeMode = "realtime";
     }
   } else {
     tickAccumulator = 0;
+    runtimeMode = "realtime";
+    lastRuntimeTickCapacity = 0;
   }
   recordProfileDuration("advanceSimulation", advanceStart);
 }
@@ -586,9 +684,11 @@ function loop(now: number): void {
   terrainProfiler?.recordFrameInterval(now);
   advanceSimulation(now);
   lastFrameTime = now;
-  render();
   const ticks = Math.max(0, sim.tickCount - (lastProfileTickCount ?? sim.tickCount));
   lastProfileTickCount = sim.tickCount;
+  updateRuntimeStats(now, ticks);
+  recordRuntimeProfile();
+  render();
   terrainProfiler?.recordFrame(profileNow() - frameStart, ticks);
   maybeFlushTerrainProfile(now);
   requestAnimationFrame(loop);

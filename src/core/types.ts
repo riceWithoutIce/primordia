@@ -149,6 +149,26 @@ export interface DynamicFields {
 
 export type ChunkActivity = "active" | "warm" | "sleeping";
 
+export type SchedulerLane =
+  | "agent"
+  | "activeEnvironment"
+  | "warmEnvironment"
+  | "sleepingCatchup"
+  | "pressureDiffusion"
+  | "summary";
+
+export interface TickPlan {
+  tick: number;
+  lanes: SchedulerLane[];
+  pressureDiffusion: boolean;
+}
+
+export interface TickReport {
+  tick: number;
+  plan: TickPlan;
+  lanes: Record<SchedulerLane, number>;
+}
+
 export interface ChunkBounds {
   id: number;
   x: number;
@@ -201,7 +221,20 @@ export interface ChunkSchedulerStats {
   updatedCells: number;
   preciseFieldUpdates: number;
   catchUpFieldUpdates: number;
+  activeEnvironmentChunks: number;
+  warmEnvironmentChunks: number;
+  sleepingCatchupChunks: number;
+  summaryRefreshChunks: number;
+  summaryRefreshRegions: number;
   diffusionChunks: number;
+  diffusionSeedChunks: number;
+  diffusionNeighborChunks: number;
+  diffusionSelectedChunks: number;
+  diffusionEffectiveChunks: number;
+  diffusionNearZeroCandidateChunks: number;
+  diffusionNearZeroSkippedChunks: number;
+  lastTickPlan: TickPlan | null;
+  lastTickReport: TickReport | null;
 }
 
 export interface ChunkGrid {

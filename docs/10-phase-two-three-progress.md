@@ -91,6 +91,7 @@ Post-review fixes:
 - Chunk-limited pressure diffusion now treats the edge outside the selected diffusion set as a closed boundary, avoiding one-way pressure drift at the active/sleeping frontier.
 - Lazy field catch-up now marks the updated chunk projection dirty so the Canvas projection cache can repaint sleeping chunks when their fields change.
 - Reset-time agent chunk and region summaries are refreshed before immediate metrics or snapshot reads.
+- Phase 2.3.18 adds the first browser-safe scheduler architecture pass: the browser frame loop no longer performs unbounded synchronous catch-up, runtime backlog is visible in the Scheduler UI, core ticks report deterministic scheduler lanes, and pressure diffusion now reports seed/neighbor/selected/effective/near-zero candidate chunk counters for the `#71` follow-up.
 
 ## Residual Risks
 
@@ -100,6 +101,7 @@ Phase 2.3 is accepted for the current task definition, with these follow-up risk
 - Pressure diffusion is chunk-aware and boundary-tested, but it still uses shared whole-world typed arrays as storage. A future implementation can move to true chunk-local field storage and boundary strip buffers.
 - Lazy catch-up is deterministic and reproducible, but resource growth catch-up uses deterministic approximation over elapsed sleeping intervals rather than exact per-tick replay for every skipped tick.
 - The current renderer has dirty projection, full-world overview, and hover inspection, but no deep zoom LOD UI yet.
+- Phase 2.3.18 has not yet changed lane cadence. `pressureDiffusionLane`, `summaryLane`, and sleeping catch-up budgeting still need profile-backed follow-up issues before any ecology semantics change.
 
 ## Result
 

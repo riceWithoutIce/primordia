@@ -50,6 +50,7 @@ import type {
   RandomSource,
   SimulationConfig,
   SimulationConfigPatch,
+  TickReport,
   SnapshotChunkSummary,
   SnapshotEnvironmentSummary,
   SnapshotLineageSummary,
@@ -274,8 +275,10 @@ export class Simulation {
       }
 
       const newborns: Agent[] = [];
+      let processedAgents = 0;
       measureCoreProfile(this.profileSink, "core.tick.agents", () => {
         for (const agent of this.agents) {
+          processedAgents += 1;
           const child = this.liveAgent(agent);
           if (child) {
             newborns.push(child);
@@ -317,7 +320,16 @@ export class Simulation {
       measureCoreProfile(this.profileSink, "core.tick.refreshAgentChunks", () => {
         this.refreshAgentChunkCounts();
       });
+      this.recordAgentLane(update.tickReport, processedAgents);
     });
+  }
+
+  private recordAgentLane(tickReport: TickReport, processedAgents: number): void {
+    tickReport.lanes.agent = processedAgents;
+    const latestReport = this.world.chunks.schedulerStats.lastTickReport;
+    if (latestReport && latestReport.tick === tickReport.tick) {
+      latestReport.lanes.agent = processedAgents;
+    }
   }
 
   attemptOrganAction(request: OrganActionRequest): OrganActionOutcome {

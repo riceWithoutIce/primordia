@@ -2,6 +2,14 @@
 
 Date: 2026-05-27
 
+Update 2026-05-28:
+
+- Phase 2.3.18 starts the browser-safe scheduler architecture pass without adding runtime third-party dependencies.
+- The app frame loop now treats `requestAnimationFrame` as a fixed work opportunity: at most a small number of logical ticks per frame and a fixed millisecond simulation budget.
+- Runtime backlog and mode are browser-layer observability only; they are intentionally kept out of deterministic core metrics and snapshot state.
+- Core scheduler stats now expose `TickPlan`, `TickReport`, active/warm/sleeping lane counts, summary refresh counts, and pressure diffusion seed/neighbor/selected/effective/near-zero candidate/skipped chunk counters.
+- The #71 pressure diffusion task should use the new counters before changing cadence or near-zero skip semantics.
+
 ## Current State
 
 Phase 2.3 large-world framework is accepted, but the terrain-only browser profile shows a new steady-state performance bottleneck after visibility-aware projection invalidation.

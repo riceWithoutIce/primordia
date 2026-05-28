@@ -137,6 +137,43 @@ describe("typed simulation core", () => {
     expect(sim.world.chunks.schedulerStats.catchUpFieldUpdates).toBe(phased.updatedChunks);
   });
 
+  it("records deterministic scheduler lane reports for identical seeds and ticks", () => {
+    const config: SimulationConfigPatch = {
+      environmentMode: "flux",
+      width: 320,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 24,
+      pressureDiffusion: 0.2,
+      resourceGrowth: 1,
+      seed: 20260618
+    };
+    const first = new Simulation(config);
+    const replay = new Simulation(config);
+
+    first.step(16);
+    replay.step(16);
+
+    const report = first.world.chunks.schedulerStats.lastTickReport;
+    expect(report).not.toBeNull();
+    if (!report) {
+      throw new Error("expected scheduler lane report");
+    }
+    expect(report.plan.lanes).toEqual([
+      "agent",
+      "activeEnvironment",
+      "warmEnvironment",
+      "sleepingCatchup",
+      "pressureDiffusion",
+      "summary"
+    ]);
+    expect(report.lanes.agent).toBeGreaterThan(0);
+    expect(report.lanes.activeEnvironment + report.lanes.warmEnvironment + report.lanes.sleepingCatchup).toBe(
+      first.metrics().updatedChunks
+    );
+    expect(report).toEqual(replay.world.chunks.schedulerStats.lastTickReport);
+  });
+
   it("marks lazily updated sleeping chunks dirty for projection refresh", () => {
     const sim = new Simulation({
       environmentMode: "flux",
@@ -911,6 +948,10 @@ describe("typed simulation core", () => {
     sim.diffusePressure();
 
     expect(sim.pressure[neighbor]).toBeGreaterThan(0);
+    expect(sim.world.chunks.schedulerStats.diffusionSeedChunks).toBeGreaterThan(0);
+    expect(sim.world.chunks.schedulerStats.diffusionNeighborChunks).toBeGreaterThan(0);
+    expect(sim.world.chunks.schedulerStats.diffusionSelectedChunks).toBeGreaterThan(0);
+    expect(sim.world.chunks.schedulerStats.diffusionEffectiveChunks).toBeGreaterThan(0);
     expect(rightChunk.activity).toBe("sleeping");
     expect(rightChunk.dirtyMask).toBe(0);
     expect(rightChunk.projectionDirty).toBe(true);

@@ -188,6 +188,21 @@ If a frame cannot finish all projected work:
 - UI should expose observed `tick/s`, active chunk count, sleeping chunk count, and scheduler backlog
 - render LOD may degrade before simulation determinism is compromised
 
+### Phase 2.3.18 Browser-Safe Scheduler Pass
+
+Date: 2026-05-28
+
+The first post-acceptance scheduler pass keeps the browser and TypeScript/Vite platform, and does not add new runtime dependencies. It separates browser frame pacing from logical simulation semantics:
+
+- `requestAnimationFrame` now provides a per-frame work opportunity, not an instruction to synchronously catch up every missed tick.
+- The app consumes at most a fixed number of logical ticks per frame and also respects a fixed millisecond simulation budget.
+- When a local machine cannot sustain the requested rate, the dish slows down and exposes backlog instead of blocking the main thread with long catch-up frames.
+- Runtime observability lives in `src/app` and stays out of deterministic core metrics and snapshots.
+- Core scheduler reporting is DOM-free and records `TickPlan`, `TickReport`, lane chunk counts, and pressure diffusion counters.
+- Pressure diffusion counters for issue `#71` are included as scheduler-adjacent observability: seed chunks, neighbor chunks, selected chunks, effective chunks, near-zero candidate chunks, and actual near-zero skipped chunks.
+
+The current implementation is intentionally conservative. It adds budgeted browser consumption and scheduler instrumentation first; it does not yet change pressure diffusion cadence or skip near-zero chunks, because those would alter ecology timing and need a profile-backed acceptance decision.
+
 ## Pressure Diffusion Boundary Exchange
 
 Phase 2.2 pressure diffusion was a whole-world process. Phase 2.3 should make diffusion chunk-aware.

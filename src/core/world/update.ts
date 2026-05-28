@@ -16,11 +16,52 @@ import {
 import { maybeSpawnProcess, maybeTriggerEnvironmentalEvent, updateProcesses } from "./processes";
 import { worldIndex } from "./world";
 import type { ChunkRecord } from "../types";
-import type { EnvironmentEventRecord, EnvironmentProcessRecord, RandomSource, SimulationConfig, WorldState } from "../types";
+import type {
+  EnvironmentEventRecord,
+  EnvironmentProcessRecord,
+  RandomSource,
+  SchedulerLane,
+  SimulationConfig,
+  TickPlan,
+  TickReport,
+  WorldState
+} from "../types";
 
 export interface EnvironmentUpdateResult {
   event: EnvironmentEventRecord | null;
   process: EnvironmentProcessRecord | null;
+  tickReport: TickReport;
+}
+
+interface EnvironmentFieldUpdateResult {
+  activeEnvironmentChunks: number;
+  catchUpUpdatedCells: number;
+  catchUpFieldUpdates: number;
+  diffusionChunks: number;
+  diffusionEffectiveChunks: number;
+  diffusionNearZeroCandidateChunks: number;
+  diffusionNearZeroSkippedChunks: number;
+  diffusionNeighborChunks: number;
+  diffusionSeedChunks: number;
+  diffusionSelectedChunks: number;
+  preciseFieldUpdates: number;
+  preciseUpdatedCells: number;
+  summaryRefreshChunks: number;
+  summaryRefreshRegions: number;
+  tickReport: TickReport;
+  updatedCells: number;
+  updatedChunks: number;
+  warmEnvironmentChunks: number;
+  sleepingCatchupChunks: number;
+}
+
+interface DiffusionResult {
+  effectiveChunks: number;
+  nearZeroCandidateChunks: number;
+  nearZeroSkippedChunks: number;
+  neighborChunks: number;
+  seedChunks: number;
+  selectedChunks: number;
 }
 
 interface EnvironmentChunkUpdateResult {
@@ -39,7 +80,7 @@ export function updateWorld(
   nearestOpenPoint: (x: number, y: number) => { x: number; y: number },
   profile?: CoreProfileSink | null
 ): EnvironmentUpdateResult {
-  updateEnvironmentFields(world, config, tick, random, profile);
+  const fields = updateEnvironmentFields(world, config, tick, random, profile);
   const updatedProcesses = measureCoreProfile(profile, "core.world.updateProcesses", () => updateProcesses(world, config));
   measureCoreProfile(profile, "core.world.touchProcesses", () => {
     for (const activeProcess of updatedProcesses) {
@@ -73,7 +114,7 @@ export function updateWorld(
   );
   profile?.recordValue("core.dirty.moistureAfterWorld", countProjectionDirtyMask(world, CHUNK_DIRTY.moisture));
   profile?.recordValue("core.dirty.pressureAfterWorld", countProjectionDirtyMask(world, CHUNK_DIRTY.pressure));
-  return { event, process };
+  return { event, process, tickReport: fields.tickReport };
 }
 
 export function updateEnvironmentFields(
@@ -82,8 +123,21 @@ export function updateEnvironmentFields(
   tick: number,
   random: RandomSource,
   profile?: CoreProfileSink | null
-): void {
+): EnvironmentFieldUpdateResult {
   const cap = config.resourceCap;
+  const lanes: SchedulerLane[] = [
+    "agent",
+    "activeEnvironment",
+    "warmEnvironment",
+    "sleepingCatchup",
+    "pressureDiffusion",
+    "summary"
+  ];
+  const tickPlan: TickPlan = {
+    tick,
+    lanes,
+    pressureDiffusion: config.pressureDiffusion > 0
+  };
   measureCoreProfile(profile, "core.world.updateChunkActivity", () =>
     updateChunkActivity(world.chunks, tick, config.warmChunkInterval, config.sleepingChunkInterval, world.size > 65536)
   );
@@ -93,6 +147,11 @@ export function updateEnvironmentFields(
   let preciseUpdatedCells = 0;
   let catchUpFieldUpdates = 0;
   let catchUpUpdatedCells = 0;
+  let activeEnvironmentChunks = 0;
+  let warmEnvironmentChunks = 0;
+  let sleepingCatchupChunks = 0;
+  let summaryRefreshChunks = 0;
+  let summaryRefreshRegions = 0;
 
   measureCoreProfile(profile, "core.world.environmentChunks", () => {
     for (const chunk of world.chunks.chunks) {
@@ -109,13 +168,20 @@ export function updateEnvironmentFields(
       if (isCatchUp) {
         catchUpFieldUpdates += 1;
         catchUpUpdatedCells += result.updatedCells;
+        if (chunk.activity === "warm") {
+          warmEnvironmentChunks += 1;
+        } else {
+          sleepingCatchupChunks += 1;
+        }
       } else {
         preciseFieldUpdates += 1;
         preciseUpdatedCells += result.updatedCells;
+        activeEnvironmentChunks += 1;
       }
       chunk.lastUpdatedTick = tick;
       chunk.dirtyMask = 0;
       refreshChunkSummary(world.chunks, chunk, world.terrain, world.fields, world.width);
+      summaryRefreshChunks += 1;
     }
   });
   profile?.recordValue("core.world.updatedChunks", updatedChunks);
@@ -126,10 +192,29 @@ export function updateEnvironmentFields(
   profile?.recordValue("core.world.catchUpUpdatedCells", catchUpUpdatedCells);
   profile?.recordValue("core.dirty.moistureAfterEnvironment", countProjectionDirtyMask(world, CHUNK_DIRTY.moisture));
 
-  const diffusionChunks = measureCoreProfile(profile, "core.world.diffusePressure", () =>
+  const diffusion = measureCoreProfile(profile, "core.world.diffusePressure", () =>
     diffusePressure(world, config, tick, profile)
   );
   const activityCounts = countChunkActivities(world.chunks);
+  const affectedDiffusionRegionIds = new Set<number>();
+  for (const chunk of world.chunks.chunks) {
+    if (chunk.projectionDirtyMask & CHUNK_DIRTY.pressure) {
+      affectedDiffusionRegionIds.add(chunk.regionId);
+    }
+  }
+  summaryRefreshRegions = affectedDiffusionRegionIds.size;
+  const tickReport: TickReport = {
+    tick,
+    plan: tickPlan,
+    lanes: {
+      agent: 0,
+      activeEnvironment: activeEnvironmentChunks,
+      warmEnvironment: warmEnvironmentChunks,
+      sleepingCatchup: sleepingCatchupChunks,
+      pressureDiffusion: diffusion.selectedChunks,
+      summary: summaryRefreshChunks + summaryRefreshRegions
+    }
+  };
   world.chunks.schedulerStats = {
     tick,
     totalChunks: world.chunks.chunks.length,
@@ -138,7 +223,46 @@ export function updateEnvironmentFields(
     updatedCells,
     preciseFieldUpdates,
     catchUpFieldUpdates,
-    diffusionChunks
+    activeEnvironmentChunks,
+    warmEnvironmentChunks,
+    sleepingCatchupChunks,
+    summaryRefreshChunks,
+    summaryRefreshRegions,
+    diffusionChunks: diffusion.selectedChunks,
+    diffusionSeedChunks: diffusion.seedChunks,
+    diffusionNeighborChunks: diffusion.neighborChunks,
+    diffusionSelectedChunks: diffusion.selectedChunks,
+    diffusionEffectiveChunks: diffusion.effectiveChunks,
+    diffusionNearZeroCandidateChunks: diffusion.nearZeroCandidateChunks,
+    diffusionNearZeroSkippedChunks: diffusion.nearZeroSkippedChunks,
+    lastTickPlan: tickPlan,
+    lastTickReport: tickReport
+  };
+  profile?.recordValue("core.scheduler.activeEnvironmentChunks", activeEnvironmentChunks);
+  profile?.recordValue("core.scheduler.warmEnvironmentChunks", warmEnvironmentChunks);
+  profile?.recordValue("core.scheduler.sleepingCatchupChunks", sleepingCatchupChunks);
+  profile?.recordValue("core.scheduler.summaryRefreshChunks", summaryRefreshChunks);
+  profile?.recordValue("core.scheduler.summaryRefreshRegions", summaryRefreshRegions);
+  return {
+    activeEnvironmentChunks,
+    catchUpUpdatedCells,
+    catchUpFieldUpdates,
+    diffusionChunks: diffusion.selectedChunks,
+    diffusionEffectiveChunks: diffusion.effectiveChunks,
+    diffusionNearZeroCandidateChunks: diffusion.nearZeroCandidateChunks,
+    diffusionNearZeroSkippedChunks: diffusion.nearZeroSkippedChunks,
+    diffusionNeighborChunks: diffusion.neighborChunks,
+    diffusionSeedChunks: diffusion.seedChunks,
+    diffusionSelectedChunks: diffusion.selectedChunks,
+    preciseFieldUpdates,
+    preciseUpdatedCells,
+    summaryRefreshChunks,
+    summaryRefreshRegions,
+    tickReport,
+    updatedCells,
+    updatedChunks,
+    warmEnvironmentChunks,
+    sleepingCatchupChunks
   };
 }
 
@@ -201,21 +325,35 @@ export function diffusePressure(
   config: SimulationConfig,
   tick = world.chunks.schedulerStats.tick,
   profile?: CoreProfileSink | null
-): number {
+): DiffusionResult {
   const diffusion = clamp(config.pressureDiffusion, 0, 0.25);
   if (diffusion <= 0) {
-    return 0;
+    const result = {
+      effectiveChunks: 0,
+      nearZeroCandidateChunks: 0,
+      nearZeroSkippedChunks: 0,
+      neighborChunks: 0,
+      seedChunks: 0,
+      selectedChunks: 0
+    };
+    writeDiffusionSchedulerStats(world, tick, result);
+    return result;
   }
 
   const pressure = world.fields.pressure;
   const chunksToDiffuse = new Set<number>();
   const sourceChunksToDiffuse = new Set<number>();
   let skippedSleepingChunks = 0;
+  let nearZeroCandidateChunks = 0;
+  let nearZeroSkippedChunks = 0;
   measureCoreProfile(profile, "core.diffusion.selectChunks", () => {
     for (const chunk of world.chunks.chunks) {
       if (world.size > 65536 && chunk.activity === "sleeping" && !chunk.dirtyMask) {
         skippedSleepingChunks += 1;
         continue;
+      }
+      if (chunk.summary.pressure <= 0.0001 && !chunk.dirtyMask) {
+        nearZeroCandidateChunks += 1;
       }
       chunksToDiffuse.add(chunk.id);
       sourceChunksToDiffuse.add(chunk.id);
@@ -227,9 +365,13 @@ export function diffusePressure(
   const neighborExpansionChunks = Math.max(0, chunksToDiffuse.size - sourceChunksToDiffuse.size);
   const computedCells = countChunkCells(world.chunks.chunks, chunksToDiffuse);
   profile?.recordValue("core.diffusion.sourceChunks", sourceChunksToDiffuse.size);
+  profile?.recordValue("core.diffusion.seedChunks", sourceChunksToDiffuse.size);
   profile?.recordValue("core.diffusion.selectedChunks", chunksToDiffuse.size);
   profile?.recordValue("core.diffusion.neighborExpansionChunks", neighborExpansionChunks);
+  profile?.recordValue("core.diffusion.neighborChunks", neighborExpansionChunks);
   profile?.recordValue("core.diffusion.skippedSleepingChunks", skippedSleepingChunks);
+  profile?.recordValue("core.diffusion.nearZeroCandidateChunks", nearZeroCandidateChunks);
+  profile?.recordValue("core.diffusion.nearZeroSkippedChunks", nearZeroSkippedChunks);
   profile?.recordValue("core.diffusion.computedCells", computedCells);
 
   measureCoreProfile(profile, "core.diffusion.compute", () => {
@@ -286,6 +428,7 @@ export function diffusePressure(
   profile?.recordValue("core.diffusion.unchangedCells", unchangedCells);
   profile?.recordValue("core.diffusion.changedChunks", changedChunks);
   profile?.recordValue("core.diffusion.unchangedChunks", unchangedChunks);
+  profile?.recordValue("core.diffusion.effectiveChunks", changedChunks);
   profile?.recordValue("core.dirty.pressureAfterDiffusion", countProjectionDirtyMask(world, CHUNK_DIRTY.pressure));
   profile?.recordValue("core.dirty.moistureAfterDiffusion", countProjectionDirtyMask(world, CHUNK_DIRTY.moisture));
 
@@ -299,7 +442,30 @@ export function diffusePressure(
       new Set([...chunksToDiffuse].map((chunkId) => world.chunks.chunks[chunkId].regionId))
     )
   );
-  return chunksToDiffuse.size;
+  const result = {
+    effectiveChunks: changedChunks,
+    nearZeroCandidateChunks,
+    nearZeroSkippedChunks,
+    neighborChunks: neighborExpansionChunks,
+    seedChunks: sourceChunksToDiffuse.size,
+    selectedChunks: chunksToDiffuse.size
+  };
+  writeDiffusionSchedulerStats(world, tick, result);
+  return result;
+}
+
+function writeDiffusionSchedulerStats(world: WorldState, tick: number, result: DiffusionResult): void {
+  world.chunks.schedulerStats = {
+    ...world.chunks.schedulerStats,
+    tick,
+    diffusionChunks: result.selectedChunks,
+    diffusionSeedChunks: result.seedChunks,
+    diffusionNeighborChunks: result.neighborChunks,
+    diffusionSelectedChunks: result.selectedChunks,
+    diffusionEffectiveChunks: result.effectiveChunks,
+    diffusionNearZeroCandidateChunks: result.nearZeroCandidateChunks,
+    diffusionNearZeroSkippedChunks: result.nearZeroSkippedChunks
+  };
 }
 
 function countProjectionDirtyMask(world: WorldState, mask: number): number {

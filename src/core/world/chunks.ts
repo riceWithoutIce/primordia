@@ -162,7 +162,20 @@ export function createSchedulerStats(totalChunks: number): ChunkSchedulerStats {
     updatedCells: 0,
     preciseFieldUpdates: 0,
     catchUpFieldUpdates: 0,
-    diffusionChunks: 0
+    activeEnvironmentChunks: 0,
+    warmEnvironmentChunks: 0,
+    sleepingCatchupChunks: 0,
+    summaryRefreshChunks: 0,
+    summaryRefreshRegions: 0,
+    diffusionChunks: 0,
+    diffusionSeedChunks: 0,
+    diffusionNeighborChunks: 0,
+    diffusionSelectedChunks: 0,
+    diffusionEffectiveChunks: 0,
+    diffusionNearZeroCandidateChunks: 0,
+    diffusionNearZeroSkippedChunks: 0,
+    lastTickPlan: null,
+    lastTickReport: null
   };
 }
 

@@ -72,10 +72,24 @@ describe("terrain baseline profiler", () => {
 
     sink?.recordDuration("core.tick.updateWorld", 7);
     sink?.recordValue("core.dirty.moistureAfterEnvironment", 42);
+    sink?.recordValue("core.diffusion.seedChunks", 3);
+    sink?.recordValue("core.diffusion.effectiveChunks", 2);
+    sink?.recordValue("core.diffusion.nearZeroCandidateChunks", 4);
+    sink?.recordValue("core.diffusion.nearZeroSkippedChunks", 0);
+    sink?.recordValue("core.scheduler.activeEnvironmentChunks", 5);
+    profiler.recordValue("runtime.backlogTicks", 1.5);
+    profiler.recordValue("runtime.mode", 2);
 
     const report = profiler.report(createScenario(), 500);
     expect(report.durations["core.tick.updateWorld"]?.p95).toBe(7);
     expect(report.values["core.dirty.moistureAfterEnvironment"]?.p95).toBe(42);
+    expect(report.values["core.diffusion.seedChunks"]?.p95).toBe(3);
+    expect(report.values["core.diffusion.effectiveChunks"]?.p95).toBe(2);
+    expect(report.values["core.diffusion.nearZeroCandidateChunks"]?.p95).toBe(4);
+    expect(report.values["core.diffusion.nearZeroSkippedChunks"]?.p95).toBe(0);
+    expect(report.values["core.scheduler.activeEnvironmentChunks"]?.p95).toBe(5);
+    expect(report.values["runtime.backlogTicks"]?.p95).toBe(1.5);
+    expect(report.values["runtime.mode"]?.p95).toBe(2);
   });
 });
 

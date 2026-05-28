@@ -69,6 +69,7 @@ export type {
   RandomSource,
   RegionGraph,
   RegionSummary,
+  SchedulerLane,
   SimulationConfig,
   SimulationConfigPatch,
   SnapshotAgent,
@@ -85,6 +86,8 @@ export type {
   StaticTerrain,
   TerrainCell,
   TerrainType,
+  TickPlan,
+  TickReport,
   WorldState
 } from "./types";
 export type {
