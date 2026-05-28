@@ -64,6 +64,7 @@ export function createChunkGrid(config: SimulationConfig, terrain: StaticTerrain
         lastTouchedTick: 0,
         activity: "sleeping",
         dirtyMask: 0,
+        fieldWriteMask: 0,
         projectionDirtyMask: CHUNK_DIRTY.all,
         summaryDirty: true,
         projectionDirty: true,
@@ -172,6 +173,11 @@ export function createSchedulerStats(totalChunks: number): ChunkSchedulerStats {
     activeAgentOnlyChunks: 0,
     activeFieldDirtyChunks: 0,
     activeMixedDirtyChunks: 0,
+    directFieldWriteChunks: 0,
+    directResourceWriteChunks: 0,
+    directTraceWriteChunks: 0,
+    directPressureWriteChunks: 0,
+    directMixedFieldWriteChunks: 0,
     warmFieldUpdateChunks: 0,
     sleepingFieldUpdateChunks: 0,
     updatedChunks: 0,
@@ -222,6 +228,23 @@ export function touchChunk(grid: ChunkGrid, chunkId: number, tick: number, dirty
   chunk.projectionDirty = true;
 }
 
+export function touchChunkFieldWrite(grid: ChunkGrid, chunkId: number, tick: number, fieldMask: number): void {
+  const chunk = grid.chunks[chunkId];
+  if (!chunk) {
+    return;
+  }
+  const mask = fieldMask & FIELD_DIRTY_MASK;
+  chunk.lastTouchedTick = Math.max(chunk.lastTouchedTick, tick);
+  chunk.activity = "active";
+  chunk.fieldWriteMask |= mask;
+  chunk.projectionDirtyMask |= mask;
+  if (mask & CHUNK_DIRTY.pressure) {
+    chunk.pressureDiffusionActive = true;
+  }
+  chunk.summaryDirty = true;
+  chunk.projectionDirty = true;
+}
+
 export function markChunkSummaryDirty(grid: ChunkGrid, chunkId: number): void {
   const chunk = grid.chunks[chunkId];
   if (!chunk) {
@@ -242,6 +265,10 @@ export function markChunkProjectionDirty(grid: ChunkGrid, chunkId: number, dirty
 
 export function touchCell(grid: ChunkGrid, index: number, tick: number, dirtyMask: number = CHUNK_DIRTY.summary): void {
   touchChunk(grid, chunkIdForIndex(grid, index), tick, dirtyMask);
+}
+
+export function touchCellFieldWrite(grid: ChunkGrid, index: number, tick: number, fieldMask: number): void {
+  touchChunkFieldWrite(grid, chunkIdForIndex(grid, index), tick, fieldMask);
 }
 
 export function touchArea(
@@ -414,6 +441,12 @@ export function clearChunkProjectionDirty(grid: ChunkGrid, chunkId: number): voi
   }
 }
 
+export function clearChunkFieldWriteMasks(grid: ChunkGrid): void {
+  for (const chunk of grid.chunks) {
+    chunk.fieldWriteMask = 0;
+  }
+}
+
 export function refreshRegionSummary(
   region: RegionSummary,
   grid: ChunkGrid,
@@ -525,6 +558,11 @@ export function countChunkActivities(grid: ChunkGrid): Pick<
   | "activeChunks"
   | "activeFieldDirtyChunks"
   | "activeMixedDirtyChunks"
+  | "directFieldWriteChunks"
+  | "directMixedFieldWriteChunks"
+  | "directPressureWriteChunks"
+  | "directResourceWriteChunks"
+  | "directTraceWriteChunks"
   | "dirtyChunks"
   | "sleepingChunks"
   | "warmChunks"
@@ -536,8 +574,29 @@ export function countChunkActivities(grid: ChunkGrid): Pick<
   let activeAgentOnlyChunks = 0;
   let activeFieldDirtyChunks = 0;
   let activeMixedDirtyChunks = 0;
+  let directFieldWriteChunks = 0;
+  let directResourceWriteChunks = 0;
+  let directTraceWriteChunks = 0;
+  let directPressureWriteChunks = 0;
+  let directMixedFieldWriteChunks = 0;
 
   for (const chunk of grid.chunks) {
+    const fieldWriteMask = chunk.fieldWriteMask & FIELD_DIRTY_MASK;
+    if (fieldWriteMask) {
+      directFieldWriteChunks += 1;
+      if (fieldWriteMask & CHUNK_DIRTY.resource) {
+        directResourceWriteChunks += 1;
+      }
+      if (fieldWriteMask & CHUNK_DIRTY.trace) {
+        directTraceWriteChunks += 1;
+      }
+      if (fieldWriteMask & CHUNK_DIRTY.pressure) {
+        directPressureWriteChunks += 1;
+      }
+      if ((fieldWriteMask & (fieldWriteMask - 1)) !== 0) {
+        directMixedFieldWriteChunks += 1;
+      }
+    }
     if (chunk.activity === "active") {
       activeChunks += 1;
       const hasAgents = chunk.agentCount > 0 || Boolean(chunk.dirtyMask & CHUNK_DIRTY.agents);
@@ -564,6 +623,11 @@ export function countChunkActivities(grid: ChunkGrid): Pick<
     activeChunks,
     activeFieldDirtyChunks,
     activeMixedDirtyChunks,
+    directFieldWriteChunks,
+    directMixedFieldWriteChunks,
+    directPressureWriteChunks,
+    directResourceWriteChunks,
+    directTraceWriteChunks,
     dirtyChunks,
     sleepingChunks,
     warmChunks

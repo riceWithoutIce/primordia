@@ -205,6 +205,7 @@ export interface ChunkRecord extends ChunkBounds {
   lastTouchedTick: number;
   activity: ChunkActivity;
   dirtyMask: number;
+  fieldWriteMask: number;
   projectionDirtyMask: number;
   summaryDirty: boolean;
   projectionDirty: boolean;
@@ -223,6 +224,11 @@ export interface ChunkSchedulerStats {
   activeAgentOnlyChunks: number;
   activeFieldDirtyChunks: number;
   activeMixedDirtyChunks: number;
+  directFieldWriteChunks: number;
+  directResourceWriteChunks: number;
+  directTraceWriteChunks: number;
+  directPressureWriteChunks: number;
+  directMixedFieldWriteChunks: number;
   warmFieldUpdateChunks: number;
   sleepingFieldUpdateChunks: number;
   updatedChunks: number;

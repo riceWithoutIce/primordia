@@ -3,6 +3,7 @@ import { measureCoreProfile, type CoreProfileSink } from "../profile";
 import {
   CHUNK_DIRTY,
   chunkFieldUpdateDecision,
+  clearChunkFieldWriteMasks,
   countChunkActivities,
   markChunkProjectionDirty,
   neighborChunkIds,
@@ -155,6 +156,8 @@ export function updateEnvironmentFields(
     updateChunkActivity(world.chunks, tick, config.warmChunkInterval, config.sleepingChunkInterval, world.size > 65536)
   );
   const preUpdateActivityCounts = countChunkActivities(world.chunks);
+  const directFieldWriteCounts = preUpdateActivityCounts;
+  clearChunkFieldWriteMasks(world.chunks);
   let updatedChunks = 0;
   let updatedCells = 0;
   let preciseFieldUpdates = 0;
@@ -241,6 +244,11 @@ export function updateEnvironmentFields(
     activeAgentOnlyChunks: preUpdateActivityCounts.activeAgentOnlyChunks,
     activeFieldDirtyChunks: preUpdateActivityCounts.activeFieldDirtyChunks,
     activeMixedDirtyChunks: preUpdateActivityCounts.activeMixedDirtyChunks,
+    directFieldWriteChunks: directFieldWriteCounts.directFieldWriteChunks,
+    directResourceWriteChunks: directFieldWriteCounts.directResourceWriteChunks,
+    directTraceWriteChunks: directFieldWriteCounts.directTraceWriteChunks,
+    directPressureWriteChunks: directFieldWriteCounts.directPressureWriteChunks,
+    directMixedFieldWriteChunks: directFieldWriteCounts.directMixedFieldWriteChunks,
     updatedChunks,
     updatedCells,
     preciseFieldUpdates,
@@ -267,6 +275,11 @@ export function updateEnvironmentFields(
   profile?.recordValue("core.scheduler.activeAgentOnlyChunks", preUpdateActivityCounts.activeAgentOnlyChunks);
   profile?.recordValue("core.scheduler.activeFieldDirtyChunks", preUpdateActivityCounts.activeFieldDirtyChunks);
   profile?.recordValue("core.scheduler.activeMixedDirtyChunks", preUpdateActivityCounts.activeMixedDirtyChunks);
+  profile?.recordValue("core.scheduler.directFieldWriteChunks", directFieldWriteCounts.directFieldWriteChunks);
+  profile?.recordValue("core.scheduler.directResourceWriteChunks", directFieldWriteCounts.directResourceWriteChunks);
+  profile?.recordValue("core.scheduler.directTraceWriteChunks", directFieldWriteCounts.directTraceWriteChunks);
+  profile?.recordValue("core.scheduler.directPressureWriteChunks", directFieldWriteCounts.directPressureWriteChunks);
+  profile?.recordValue("core.scheduler.directMixedFieldWriteChunks", directFieldWriteCounts.directMixedFieldWriteChunks);
   profile?.recordValue("core.scheduler.warmEnvironmentChunks", warmEnvironmentChunks);
   profile?.recordValue("core.scheduler.warmFieldUpdateChunks", warmFieldUpdateChunks);
   profile?.recordValue("core.scheduler.sleepingCatchupChunks", sleepingCatchupChunks);

@@ -190,6 +190,7 @@ describe("typed simulation core", () => {
     for (const chunk of sim.world.chunks.chunks) {
       chunk.activity = "sleeping";
       chunk.dirtyMask = 0;
+      chunk.fieldWriteMask = 0;
       chunk.projectionDirtyMask = 0;
       chunk.projectionDirty = false;
       chunk.pressureDiffusionActive = false;
@@ -257,6 +258,58 @@ describe("typed simulation core", () => {
     expect(stats.updatedChunks).toBe(0);
     expect(stats.updatedCells).toBe(0);
     expect(agentOnly.lastUpdatedTick).toBe(1);
+  });
+
+  it("records direct field writes without forcing immediate environment chunk scans", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 96,
+      height: 64,
+      chunkSize: 32,
+      initialAgents: 0,
+      pressureDiffusion: 0,
+      resourceGrowth: 0,
+      seed: 20260624
+    });
+    const agent = sim.spawnAgent(
+      1,
+      1,
+      testGenome({
+        harvestRate: 0,
+        moveCost: 0
+      }),
+      20
+    );
+    const idx = sim.index(agent.x, agent.y);
+    const chunk = sim.world.chunks.chunks[sim.world.chunks.cellToChunk[idx]];
+    for (const record of sim.world.chunks.chunks) {
+      record.activity = "sleeping";
+      record.dirtyMask = 0;
+      record.fieldWriteMask = 0;
+      record.projectionDirtyMask = 0;
+      record.projectionDirty = false;
+      record.pressureDiffusionActive = false;
+      record.lastTouchedTick = -100;
+      record.lastUpdatedTick = 1;
+      record.agentCount = 0;
+      record.summary.agentCount = 0;
+      record.summaryDirty = false;
+    }
+
+    sim.leaveTrace(agent, 0);
+
+    expect(chunk.dirtyMask).toBe(0);
+    expect(chunk.fieldWriteMask & CHUNK_DIRTY.trace).toBe(CHUNK_DIRTY.trace);
+    expect(chunk.projectionDirtyMask & CHUNK_DIRTY.trace).toBe(CHUNK_DIRTY.trace);
+
+    updateEnvironmentFields(sim.world, sim.config, 2, sim.random);
+
+    const stats = sim.world.chunks.schedulerStats;
+    expect(stats.directTraceWriteChunks).toBe(1);
+    expect(stats.activeEnvironmentChunks).toBe(0);
+    expect(stats.updatedChunks).toBe(0);
+    expect(chunk.lastUpdatedTick).toBe(1);
+    expect(chunk.fieldWriteMask).toBe(0);
   });
 
   it("uses pressure-touched chunks as the large-world diffusion source", () => {
@@ -1383,6 +1436,7 @@ describe("typed simulation core", () => {
     const harvestChunk = highHarvest.world.chunks.chunks[highHarvest.world.chunks.cellToChunk[idx]];
     highHarvest.resources[idx] = GENOME_BOUNDS.harvestRate.max;
     harvestChunk.dirtyMask = 0;
+    harvestChunk.fieldWriteMask = 0;
     harvestChunk.projectionDirtyMask = 0;
     harvestChunk.projectionDirty = false;
     harvestChunk.pressureDiffusionActive = false;
@@ -1391,7 +1445,8 @@ describe("typed simulation core", () => {
     highHarvest.harvestAgent(agent);
 
     expect(highHarvest.pressure[idx]).toBeGreaterThan(pressureBeforeHarvest);
-    expect(harvestChunk.dirtyMask & CHUNK_DIRTY.pressure).toBe(CHUNK_DIRTY.pressure);
+    expect(harvestChunk.dirtyMask & CHUNK_DIRTY.pressure).toBe(0);
+    expect(harvestChunk.fieldWriteMask & CHUNK_DIRTY.pressure).toBe(CHUNK_DIRTY.pressure);
     expect(harvestChunk.pressureDiffusionActive).toBe(true);
 
     const exhausted = new Simulation({
@@ -1414,6 +1469,7 @@ describe("typed simulation core", () => {
     exhausted.resources[exhaustedIdx] = 0;
     const pressureBeforeExhaustedHarvest = exhausted.pressure[exhaustedIdx];
     exhaustedChunk.dirtyMask = 0;
+    exhaustedChunk.fieldWriteMask = 0;
     exhaustedChunk.projectionDirtyMask = 0;
     exhaustedChunk.projectionDirty = false;
     exhaustedChunk.pressureDiffusionActive = false;
@@ -1422,7 +1478,8 @@ describe("typed simulation core", () => {
 
     expect(exhaustedHarvest).toBe(0);
     expect(exhausted.pressure[exhaustedIdx]).toBe(pressureBeforeExhaustedHarvest);
-    expect(exhaustedChunk.dirtyMask & CHUNK_DIRTY.resource).toBe(CHUNK_DIRTY.resource);
+    expect(exhaustedChunk.dirtyMask & CHUNK_DIRTY.resource).toBe(0);
+    expect(exhaustedChunk.fieldWriteMask & CHUNK_DIRTY.resource).toBe(CHUNK_DIRTY.resource);
     expect(exhaustedChunk.dirtyMask & CHUNK_DIRTY.pressure).toBe(0);
     expect(exhaustedChunk.pressureDiffusionActive).toBe(false);
 

@@ -21,7 +21,8 @@ import {
   recordAgentChunk,
   refreshDirtyRegionSummaries,
   resetChunkAgentCounts,
-  touchCell
+  touchCell,
+  touchCellFieldWrite
 } from "../world/chunks";
 import {
   barrierFor,
@@ -437,7 +438,7 @@ export class Simulation {
     const pressureAmount = clamp(0.05 + outcome.cost.pressure + radius * 0.03, 0, 0.4);
     this.traces[idx] = clamp(this.traces[idx] + traceAmount, 0, 12);
     this.pressure[idx] = clamp(this.pressure[idx] + pressureAmount, 0, 4);
-    touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure);
+    touchCellFieldWrite(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure);
   }
 
   updateEnvironment(): void {
@@ -543,14 +544,19 @@ export class Simulation {
     if (pressureDelta > 0) {
       this.pressure[idx] = clamp(this.pressure[idx] + pressureDelta, 0, 4);
     }
-    touchCell(this.world.chunks, idx, this.tickCount, pressureDelta > 0 ? CHUNK_DIRTY.resource | CHUNK_DIRTY.pressure : CHUNK_DIRTY.resource);
+    touchCellFieldWrite(
+      this.world.chunks,
+      idx,
+      this.tickCount,
+      pressureDelta > 0 ? CHUNK_DIRTY.resource | CHUNK_DIRTY.pressure : CHUNK_DIRTY.resource
+    );
     return harvested;
   }
 
   leaveTrace(agent: Agent, harvested: number): void {
     const idx = this.index(agent.x, agent.y);
     this.traces[idx] = clamp(this.traces[idx] + 0.5 + harvested * 0.09, 0, 12);
-    touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.trace);
+    touchCellFieldWrite(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.trace);
     if (agent.energy <= 0) {
       this.markDeath(agent, "starvation");
     }
@@ -587,7 +593,7 @@ export class Simulation {
     this.resources[idx] = clamp(this.resources[idx] + resourceResidue, 0, this.config.resourceCap);
     this.traces[idx] = clamp(this.traces[idx] + traceResidue, 0, 12);
     this.pressure[idx] = clamp(this.pressure[idx] + pressureResidue, 0, 4);
-    touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure);
+    touchCellFieldWrite(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure);
   }
 
   chooseMove(agent: Agent): MoveVector {
@@ -667,7 +673,8 @@ export class Simulation {
 
     this.traces[idx] = clamp(this.traces[idx] + reproductionWaste * 0.02, 0, 12);
     this.pressure[idx] = clamp(this.pressure[idx] + reproductionWaste * 0.006, 0, 4);
-    touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure | CHUNK_DIRTY.agents);
+    touchCellFieldWrite(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure);
+    touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.agents);
 
     parent.lastAction = "divide";
     this.knownSpecies.add(speciesId);

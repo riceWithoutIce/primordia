@@ -216,6 +216,20 @@ The first structural split after the pressure profile separates agent activity f
 
 This is a lane-meaning change rather than a new ecology rule. Agent actions that actually mutate resource, trace, pressure, moisture, or process state still mark field dirty bits and update on the current tick. The remaining acceptance step is a fresh terrain-only deep profile to confirm that `core.world.environmentChunks`, `updatedChunks`, `sim.step`, and backlog fall without starving necessary field catch-up.
 
+### Phase 2.3.23 Direct Field Write Split
+
+Date: 2026-05-28
+
+The next structural split separates direct agent field writes from environment field evolution:
+
+- agent writes to resource, trace, and pressure still mutate the typed field arrays immediately
+- those writes now mark `fieldWriteMask` for projection, summary, diffusion-frontier, and profiler observability
+- direct writes do not put the chunk into the immediate full environment chunk scan by themselves
+- natural resource growth, trace decay, pressure decay/growth, moisture aging, process effects, and environmental events continue through the field update lane and cadence
+- profiler counters now expose direct field write chunks by resource, trace, pressure, and mixed write masks
+
+This is the first concrete sub-lane split for resource/trace/pressure. It preserves the logical tick boundary and direct agent side effects, while avoiding the old coupling where every trace or harvest write implied a full resource/trace/pressure/moisture scan over the containing chunk on the next environment pass.
+
 ## Pressure Diffusion Boundary Exchange
 
 Phase 2.2 pressure diffusion was a whole-world process. Phase 2.3 should make diffusion chunk-aware.

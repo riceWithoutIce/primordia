@@ -12,6 +12,7 @@ Update 2026-05-28:
 - Phase 2.3.19 has begun pressure-lane tightening: large-world diffusion now combines direct pressure-touch chunks with a bounded deterministic background chunk slice, and region summary refresh counts follow changed diffusion regions instead of pressure projection dirtiness.
 - The latest terrain-only deep profile from `C:/Users/admin/Desktop/profile.txt` supersedes the older projection-feedback profile below. Projection repaint is no longer the dominant 371ms hotspot; the current structural bottleneck is `agent/chunk activity -> field chunk updates -> pressure diffusion -> backlog`.
 - Phase 2.3.22 first pass is implemented locally: agent occupancy and agent-only movement dirtiness no longer force immediate full environment field scans. Field updates now key off field dirty bits or warm/sleeping cadence, and scheduler diagnostics separate agent-only, field-dirty, and mixed active chunks.
+- Phase 2.3.23 first pass is implemented locally: direct agent field writes now use a separate `fieldWriteMask` path for projection, summary, and pressure-frontier observability instead of putting the chunk into the immediate full-field update lane. This is the first practical trace/resource/pressure sub-lane split.
 
 ## Current State
 
@@ -23,21 +24,10 @@ Local state is ahead of GitHub Project status:
 - `067ac44` - `Add core simulation profile counters`
 - `7095924` - `Add browser-safe scheduler telemetry`
 
-Current uncommitted Phase 2.3.x work is intentional and should be kept:
+Recent committed Phase 2.3.x work:
 
-- `src/app/render/projection.ts`
-- `src/app/terrainProfiler.ts`
-- `src/core/config/defaults.ts`
-- `src/core/sim/simulation.ts`
-- `src/core/types.ts`
-- `src/core/world/chunks.ts`
-- `src/core/world/update.ts`
-- `tests/core.test.ts`
-- `tests/terrain-profiler.test.ts`
-- `ai/context/phase-2-3-performance-handoff.md`
-- `ai/context/project-brief.md`
-- `docs/09-large-world-architecture.md`
-- `docs/10-phase-two-three-progress.md`
+- `c8988cf` - `Tighten Phase 2.3 scheduler lanes`
+- current local candidate - direct field write lane split; should be committed after verification
 
 The profiler is off by default. It only runs when the app URL includes `?profile=terrain`; deep core timing is enabled with `profileDetail=deep` or `profile=terrain-deep`.
 
@@ -127,8 +117,19 @@ Completed first-pass queue:
 Next validation queue:
 
 1. Run `npm run check` and `npm run build` after any final local edits.
-2. Capture a new terrain-only deep profile and compare `core.world.environmentChunks`, `activeAgentOnlyChunks`, `activeEnvironmentChunks`, `updatedChunks`, `sim.step`, and backlog.
+2. Capture a new terrain-only deep profile and compare `core.world.environmentChunks`, `activeAgentOnlyChunks`, `activeEnvironmentChunks`, `activeMixedDirtyChunks`, `directFieldWriteChunks`, `directTraceWriteChunks`, `updatedChunks`, `sim.step`, and backlog.
 3. Then run a pressure-visible deep profile before closing #71/#75.
+
+## Latest Local Node Benchmark
+
+After the direct field write split, `npm run bench:core` produced:
+
+- `960x640 initialize`: mean about `3139.44ms`
+- `960x640 cold step(16)`: mean about `3576.43ms`
+- `960x640 hot step(16)`: mean about `664.68ms`
+- `960x640 hot snapshot stride 48`: mean about `3.2737ms`
+
+Interpretation: the Node hot-step benchmark improved substantially from the previous local `~1012ms` hot `step(16)`. Browser terrain deep profile is still required because backlog and render projection are browser-specific.
 
 ## Historical Profile Superseded By Current Baseline
 

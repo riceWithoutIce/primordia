@@ -94,6 +94,7 @@ Post-review fixes:
 - Phase 2.3.18 adds the first browser-safe scheduler architecture pass: the browser frame loop no longer performs unbounded synchronous catch-up, runtime backlog is visible in the Scheduler UI, core ticks report deterministic scheduler lanes, and pressure diffusion now reports seed/neighbor/selected/effective/near-zero candidate chunk counters for the `#71` follow-up.
 - Phase 2.3.19 starts pressure-lane tightening: large-world pressure diffusion now combines direct pressure-touch chunks with a bounded deterministic background chunk slice, and summary region refresh counts follow actually changed diffusion regions rather than broad pressure projection dirtiness.
 - Phase 2.3.22 starts the agent/field lane split: agent occupancy and agent-only dirty chunks remain visible to agent/projection diagnostics, but they no longer force immediate full environment field scans unless resource, trace, pressure, moisture, or process dirty bits are present.
+- Phase 2.3.23 starts the direct field write split: agent resource/trace/pressure writes now use a separate `fieldWriteMask` path for projection, summary, and pressure diffusion observability instead of immediately forcing a full resource/trace/pressure/moisture chunk scan.
 
 ## Residual Risks
 
@@ -105,6 +106,7 @@ Phase 2.3 is accepted for the current task definition, with these follow-up risk
 - The current renderer has dirty projection, full-world overview, and hover inspection, but no deep zoom LOD UI yet.
 - Phase 2.3.19 changes the pressure diffusion source set and bounded background cadence but not browser timing. It still needs terrain and pressure-visible profiles to confirm that diffusion seed/selected chunks, summary refresh regions, and per-tick cost fall without unacceptable ecology drift.
 - Phase 2.3.22 changes scheduler lane classification and should be validated with a terrain-only deep profile before accepting the new default cadence.
+- Phase 2.3.23 improves the Node hot-step benchmark, but still needs a browser terrain-only deep profile to verify backlog, render p95, and `directFieldWriteChunks` under the real frame loop.
 
 ## Result
 
