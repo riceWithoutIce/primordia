@@ -56,6 +56,8 @@ export interface SimulationConfig {
   traceDecay: number;
   pressureDecay: number;
   pressureDiffusion: number;
+  pressureDiffusionChunkBudget: number;
+  pressureDiffusionSourceBudget: number;
   pressureGrowth: number;
   reproductionShare: number;
   organBudgetPerTick: number;
@@ -206,6 +208,7 @@ export interface ChunkRecord extends ChunkBounds {
   projectionDirtyMask: number;
   summaryDirty: boolean;
   projectionDirty: boolean;
+  pressureDiffusionActive: boolean;
   agentCount: number;
   summary: ChunkSummary;
 }
@@ -217,6 +220,11 @@ export interface ChunkSchedulerStats {
   warmChunks: number;
   sleepingChunks: number;
   dirtyChunks: number;
+  activeAgentOnlyChunks: number;
+  activeFieldDirtyChunks: number;
+  activeMixedDirtyChunks: number;
+  warmFieldUpdateChunks: number;
+  sleepingFieldUpdateChunks: number;
   updatedChunks: number;
   updatedCells: number;
   preciseFieldUpdates: number;
@@ -231,6 +239,7 @@ export interface ChunkSchedulerStats {
   diffusionNeighborChunks: number;
   diffusionSelectedChunks: number;
   diffusionEffectiveChunks: number;
+  diffusionDeferredChunks: number;
   diffusionNearZeroCandidateChunks: number;
   diffusionNearZeroSkippedChunks: number;
   lastTickPlan: TickPlan | null;

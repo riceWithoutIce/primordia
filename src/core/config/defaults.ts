@@ -21,6 +21,8 @@ export const DEFAULTS: SimulationConfig = {
   traceDecay: 0.965,
   pressureDecay: 0.992,
   pressureDiffusion: 0.055,
+  pressureDiffusionChunkBudget: 128,
+  pressureDiffusionSourceBudget: 64,
   pressureGrowth: 0.012,
   reproductionShare: 0.46,
   organBudgetPerTick: 18,

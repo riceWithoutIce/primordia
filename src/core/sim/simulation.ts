@@ -539,8 +539,11 @@ export class Simulation {
     const harvested = Math.min(this.resources[idx], agent.genome.harvestRate * terrainFactor);
     this.resources[idx] -= harvested;
     agent.energy += harvested;
-    this.pressure[idx] = clamp(this.pressure[idx] + harvestPressure(agent.genome, harvested), 0, 4);
-    touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.resource | CHUNK_DIRTY.pressure);
+    const pressureDelta = harvestPressure(agent.genome, harvested);
+    if (pressureDelta > 0) {
+      this.pressure[idx] = clamp(this.pressure[idx] + pressureDelta, 0, 4);
+    }
+    touchCell(this.world.chunks, idx, this.tickCount, pressureDelta > 0 ? CHUNK_DIRTY.resource | CHUNK_DIRTY.pressure : CHUNK_DIRTY.resource);
     return harvested;
   }
 

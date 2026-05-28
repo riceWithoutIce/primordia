@@ -125,6 +125,9 @@ describe("visibility-aware projection invalidation", () => {
 
   it("does not mark terrain moisture dirty when environment decay has no visual moisture change", () => {
     const sim = createCleanProjectionSimulation();
+    for (const chunk of sim.world.chunks.chunks) {
+      chunk.dirtyMask = CHUNK_DIRTY.resource;
+    }
 
     updateEnvironmentFields(sim.world, sim.config, 1, sim.random);
 
@@ -141,6 +144,7 @@ describe("visibility-aware projection invalidation", () => {
     const idx = target.startY * sim.width + target.startX;
     sim.world.terrain.moistureBase[idx] = 0.2;
     sim.world.fields.moistureDelta[idx] = 1;
+    target.dirtyMask = CHUNK_DIRTY.resource;
 
     updateEnvironmentFields(sim.world, sim.config, 1, sim.random);
 

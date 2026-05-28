@@ -201,7 +201,20 @@ The first post-acceptance scheduler pass keeps the browser and TypeScript/Vite p
 - Core scheduler reporting is DOM-free and records `TickPlan`, `TickReport`, lane chunk counts, and pressure diffusion counters.
 - Pressure diffusion counters for issue `#71` are included as scheduler-adjacent observability: seed chunks, neighbor chunks, selected chunks, effective chunks, near-zero candidate chunks, and actual near-zero skipped chunks.
 
-The current implementation is intentionally conservative. It adds budgeted browser consumption and scheduler instrumentation first; it does not yet change pressure diffusion cadence or skip near-zero chunks, because those would alter ecology timing and need a profile-backed acceptance decision.
+The current implementation is intentionally conservative. It adds budgeted browser consumption and scheduler instrumentation first; it does not skip near-zero chunks, because the first terrain profile showed no near-zero candidates. The first pressure-lane tightening now uses a bounded deterministic pressure slice: chunks touched by direct pressure writes seed immediate diffusion, while the background pressure field advances through a fixed chunk phase and its neighbors. Changed chunks mark pressure projection dirty, and changed regions refresh summaries.
+
+### Phase 2.3.22 Agent/Field Lane Split
+
+Date: 2026-05-28
+
+The first structural split after the pressure profile separates agent activity from field update activity:
+
+- agent occupancy, movement, and lineage overlay dirtiness can keep a chunk agent-active without implying that resource, trace, pressure, moisture, or process fields need an immediate cell scan
+- field updates are selected by field dirty bits first, then by deterministic warm/sleeping cadence
+- scheduler diagnostics separately count agent-only, field-dirty, and mixed active chunks
+- render projection still consumes only the visible dependency mask, so runtime agent/process overlays do not force terrain/background projection refreshes
+
+This is a lane-meaning change rather than a new ecology rule. Agent actions that actually mutate resource, trace, pressure, moisture, or process state still mark field dirty bits and update on the current tick. The remaining acceptance step is a fresh terrain-only deep profile to confirm that `core.world.environmentChunks`, `updatedChunks`, `sim.step`, and backlog fall without starving necessary field catch-up.
 
 ## Pressure Diffusion Boundary Exchange
 

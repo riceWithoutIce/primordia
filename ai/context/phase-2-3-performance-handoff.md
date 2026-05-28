@@ -11,6 +11,7 @@ Update 2026-05-28:
 - The #71 pressure diffusion task should use the new counters before changing cadence or near-zero skip semantics.
 - Phase 2.3.19 has begun pressure-lane tightening: large-world diffusion now combines direct pressure-touch chunks with a bounded deterministic background chunk slice, and region summary refresh counts follow changed diffusion regions instead of pressure projection dirtiness.
 - The latest terrain-only deep profile from `C:/Users/admin/Desktop/profile.txt` supersedes the older projection-feedback profile below. Projection repaint is no longer the dominant 371ms hotspot; the current structural bottleneck is `agent/chunk activity -> field chunk updates -> pressure diffusion -> backlog`.
+- Phase 2.3.22 first pass is implemented locally: agent occupancy and agent-only movement dirtiness no longer force immediate full environment field scans. Field updates now key off field dirty bits or warm/sleeping cadence, and scheduler diagnostics separate agent-only, field-dirty, and mixed active chunks.
 
 ## Current State
 
@@ -98,7 +99,7 @@ Current interpretation:
 
 ## Structural Refactor Plan
 
-Highest priority: create and execute `Phase 2.3.22: Decouple agent activity from field updates`.
+Highest priority: validate and tune `Phase 2.3.22: Decouple agent activity from field updates`.
 
 Design direction:
 
@@ -114,16 +115,20 @@ Design direction:
 - Field dirty, render dirty, summary dirty, and diffusion frontier should not all share one overloaded dirty meaning.
 - Pressure diffusion should move toward source/frontier semantics, not broad fixed background scanning as the main mechanism.
 
-Immediate task queue:
+Completed first-pass queue:
 
-1. Update GitHub Project status for #71-#74 to reflect active Phase 2.3.x work.
-2. Add a new P0 structural issue for agent-active vs field-update decoupling.
-3. Before implementing that issue, document the current coupling in code comments or the issue body:
+1. GitHub Project status for #71-#76 now reflects active Phase 2.3.x work.
+2. New P0 issue #76 tracks agent-active vs field-update decoupling.
+3. The issue and handoff document the current coupling:
    `agentCount -> chunk active -> environmentChunks full scan -> dirty projection/diffusion -> backlog`.
-4. Implement the smallest semantic-preserving split:
-   agent-occupied chunks can be agent-active without forcing field-active unless the agent actually writes a field that requires field work.
-5. Run `npm run check`, `npm run build`, and a terrain-only deep profile.
-6. Then run a pressure-visible deep profile before closing #71/#75.
+4. The first semantic-preserving split is implemented:
+   agent-occupied and agent-only dirty chunks can stay agent-active without forcing immediate field-active scans.
+
+Next validation queue:
+
+1. Run `npm run check` and `npm run build` after any final local edits.
+2. Capture a new terrain-only deep profile and compare `core.world.environmentChunks`, `activeAgentOnlyChunks`, `activeEnvironmentChunks`, `updatedChunks`, `sim.step`, and backlog.
+3. Then run a pressure-visible deep profile before closing #71/#75.
 
 ## Historical Profile Superseded By Current Baseline
 

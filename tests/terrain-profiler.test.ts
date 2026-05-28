@@ -57,6 +57,7 @@ describe("terrain baseline profiler", () => {
     expect(report.complete).toBe(true);
     expect(report.counters.frames).toBe(1);
     expect(report.latestProjection?.totalChunks).toBe(600);
+    expect(report.assessment.pass).toBe(true);
     expect(report.samples).toHaveLength(1);
   });
 
@@ -73,6 +74,7 @@ describe("terrain baseline profiler", () => {
     sink?.recordDuration("core.tick.updateWorld", 7);
     sink?.recordValue("core.dirty.moistureAfterEnvironment", 42);
     sink?.recordValue("core.diffusion.seedChunks", 3);
+    sink?.recordValue("core.diffusion.deferredChunks", 1);
     sink?.recordValue("core.diffusion.effectiveChunks", 2);
     sink?.recordValue("core.diffusion.nearZeroCandidateChunks", 4);
     sink?.recordValue("core.diffusion.nearZeroSkippedChunks", 0);
@@ -84,6 +86,7 @@ describe("terrain baseline profiler", () => {
     expect(report.durations["core.tick.updateWorld"]?.p95).toBe(7);
     expect(report.values["core.dirty.moistureAfterEnvironment"]?.p95).toBe(42);
     expect(report.values["core.diffusion.seedChunks"]?.p95).toBe(3);
+    expect(report.values["core.diffusion.deferredChunks"]?.p95).toBe(1);
     expect(report.values["core.diffusion.effectiveChunks"]?.p95).toBe(2);
     expect(report.values["core.diffusion.nearZeroCandidateChunks"]?.p95).toBe(4);
     expect(report.values["core.diffusion.nearZeroSkippedChunks"]?.p95).toBe(0);

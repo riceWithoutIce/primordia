@@ -92,6 +92,8 @@ Post-review fixes:
 - Lazy field catch-up now marks the updated chunk projection dirty so the Canvas projection cache can repaint sleeping chunks when their fields change.
 - Reset-time agent chunk and region summaries are refreshed before immediate metrics or snapshot reads.
 - Phase 2.3.18 adds the first browser-safe scheduler architecture pass: the browser frame loop no longer performs unbounded synchronous catch-up, runtime backlog is visible in the Scheduler UI, core ticks report deterministic scheduler lanes, and pressure diffusion now reports seed/neighbor/selected/effective/near-zero candidate chunk counters for the `#71` follow-up.
+- Phase 2.3.19 starts pressure-lane tightening: large-world pressure diffusion now combines direct pressure-touch chunks with a bounded deterministic background chunk slice, and summary region refresh counts follow actually changed diffusion regions rather than broad pressure projection dirtiness.
+- Phase 2.3.22 starts the agent/field lane split: agent occupancy and agent-only dirty chunks remain visible to agent/projection diagnostics, but they no longer force immediate full environment field scans unless resource, trace, pressure, moisture, or process dirty bits are present.
 
 ## Residual Risks
 
@@ -101,7 +103,8 @@ Phase 2.3 is accepted for the current task definition, with these follow-up risk
 - Pressure diffusion is chunk-aware and boundary-tested, but it still uses shared whole-world typed arrays as storage. A future implementation can move to true chunk-local field storage and boundary strip buffers.
 - Lazy catch-up is deterministic and reproducible, but resource growth catch-up uses deterministic approximation over elapsed sleeping intervals rather than exact per-tick replay for every skipped tick.
 - The current renderer has dirty projection, full-world overview, and hover inspection, but no deep zoom LOD UI yet.
-- Phase 2.3.18 has not yet changed lane cadence. `pressureDiffusionLane`, `summaryLane`, and sleeping catch-up budgeting still need profile-backed follow-up issues before any ecology semantics change.
+- Phase 2.3.19 changes the pressure diffusion source set and bounded background cadence but not browser timing. It still needs terrain and pressure-visible profiles to confirm that diffusion seed/selected chunks, summary refresh regions, and per-tick cost fall without unacceptable ecology drift.
+- Phase 2.3.22 changes scheduler lane classification and should be validated with a terrain-only deep profile before accepting the new default cadence.
 
 ## Result
 

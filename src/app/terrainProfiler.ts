@@ -42,6 +42,7 @@ export type TerrainProfileValue =
   | "core.diffusion.changedCells"
   | "core.diffusion.changedChunks"
   | "core.diffusion.computedCells"
+  | "core.diffusion.deferredChunks"
   | "core.diffusion.effectiveChunks"
   | "core.diffusion.nearZeroCandidateChunks"
   | "core.diffusion.nearZeroSkippedChunks"
@@ -65,11 +66,16 @@ export type TerrainProfileValue =
   | "core.world.preciseUpdatedChunks"
   | "core.world.updatedCells"
   | "core.world.updatedChunks"
+  | "core.scheduler.activeAgentOnlyChunks"
   | "core.scheduler.activeEnvironmentChunks"
+  | "core.scheduler.activeFieldDirtyChunks"
+  | "core.scheduler.activeMixedDirtyChunks"
   | "core.scheduler.sleepingCatchupChunks"
+  | "core.scheduler.sleepingFieldUpdateChunks"
   | "core.scheduler.summaryRefreshChunks"
   | "core.scheduler.summaryRefreshRegions"
   | "core.scheduler.warmEnvironmentChunks"
+  | "core.scheduler.warmFieldUpdateChunks"
   | "projection.dirtyMaskChunks"
   | "projection.fullRebuild"
   | "projection.moistureDirtyChunks"
@@ -126,6 +132,7 @@ export interface TerrainProfileSample {
 export interface TerrainProfileReport {
   kind: "primordia.terrain-profile";
   schemaVersion: 1;
+  assessment: TerrainProfileAssessment;
   startedAt: string;
   elapsedMs: number;
   targetDurationMs: number;
@@ -136,6 +143,23 @@ export interface TerrainProfileReport {
   latestProjection: ProjectionProfileStats | null;
   scenario: TerrainProfileScenario;
   samples: TerrainProfileSample[];
+}
+
+export interface TerrainProfileAssessment {
+  pass: boolean;
+  checks: {
+    backlogStable: boolean;
+    renderWithinBudget: boolean;
+    simP50WithinBudget: boolean;
+    simP95WithinBudget: boolean;
+  };
+  limits: {
+    backlogP95Max: number;
+    renderP95Ms: number;
+    simP50Ms: number;
+    simP95Ms: number;
+  };
+  summary: string[];
 }
 
 export interface TerrainProfilerOptions {
@@ -164,6 +188,12 @@ interface ProfileBucket {
 
 const DEFAULT_DURATION_SECONDS = 60;
 const DEFAULT_SAMPLE_INTERVAL_MS = 1000;
+const TERRAIN_BASELINE_LIMITS = {
+  backlogP95Max: 3,
+  renderP95Ms: 8,
+  simP50Ms: 24,
+  simP95Ms: 33
+} as const;
 
 export class TerrainProfiler {
   readonly startedAt: string;
@@ -277,16 +307,19 @@ export class TerrainProfiler {
   }
 
   report(scenario: TerrainProfileScenario, nowMs = performance.now()): TerrainProfileReport {
+    const durations = summarizeRecord(this.total.durations);
+    const values = summarizeRecord(this.total.values);
     return {
       kind: "primordia.terrain-profile",
       schemaVersion: 1,
+      assessment: assessTerrainProfile(durations, values),
       startedAt: this.startedAt,
       elapsedMs: nowMs - this.startMs,
       targetDurationMs: this.targetDurationMs,
       complete: this.isComplete(nowMs),
       counters: { ...this.total.counters },
-      durations: summarizeRecord(this.total.durations),
-      values: summarizeRecord(this.total.values),
+      durations,
+      values,
       latestProjection: this.latestProjection ? { ...this.latestProjection } : null,
       scenario,
       samples: [...this.samples]
@@ -315,6 +348,33 @@ export class TerrainProfiler {
       scenario
     };
   }
+}
+
+function assessTerrainProfile(
+  durations: Partial<Record<TerrainProfilePhase, ProfileStats>>,
+  values: Partial<Record<TerrainProfileValue, ProfileStats>>
+): TerrainProfileAssessment {
+  const simStep = durations["sim.step"];
+  const render = durations["render.total"];
+  const backlog = values["runtime.backlogTicks"];
+  const checks = {
+    backlogStable: (backlog?.p95 ?? 0) <= TERRAIN_BASELINE_LIMITS.backlogP95Max,
+    renderWithinBudget: (render?.p95 ?? 0) <= TERRAIN_BASELINE_LIMITS.renderP95Ms,
+    simP50WithinBudget: (simStep?.p50 ?? Number.POSITIVE_INFINITY) <= TERRAIN_BASELINE_LIMITS.simP50Ms,
+    simP95WithinBudget: (simStep?.p95 ?? Number.POSITIVE_INFINITY) <= TERRAIN_BASELINE_LIMITS.simP95Ms
+  };
+  const summary = [
+    `sim.step p50 ${formatStat(simStep?.p50)} <= ${TERRAIN_BASELINE_LIMITS.simP50Ms}`,
+    `sim.step p95 ${formatStat(simStep?.p95)} <= ${TERRAIN_BASELINE_LIMITS.simP95Ms}`,
+    `runtime.backlogTicks p95 ${formatStat(backlog?.p95)} <= ${TERRAIN_BASELINE_LIMITS.backlogP95Max}`,
+    `render.total p95 ${formatStat(render?.p95)} <= ${TERRAIN_BASELINE_LIMITS.renderP95Ms}`
+  ];
+  return {
+    pass: Object.values(checks).every(Boolean),
+    checks,
+    limits: { ...TERRAIN_BASELINE_LIMITS },
+    summary
+  };
 }
 
 export function createTerrainProfilerFromSearch(

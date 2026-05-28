@@ -56,7 +56,7 @@ export function createProjection(
   const selectChunksMs = profile ? profile.now() - selectStart : 0;
   const chunks = selection.chunks;
   let projectedCells = 0;
-  const dirtyStats = profile ? countProjectionDirtyStats(sim.world.chunks.chunks) : null;
+  const dirtyStats = profile ? countProjectionDirtyStats(sim.world.chunks.chunks, visibleDependencyMask) : null;
   const paintStart = profile?.now() ?? 0;
 
   for (const chunk of chunks) {
@@ -189,7 +189,10 @@ export function cellForProjection(cell: EnvironmentCell): EnvironmentCell {
   return cell;
 }
 
-function countProjectionDirtyStats(chunks: ChunkRecord[]): {
+function countProjectionDirtyStats(
+  chunks: ChunkRecord[],
+  visibleDependencyMask: number
+): {
   dirtyMaskChunks: number;
   moistureDirtyChunks: number;
   pressureDirtyChunks: number;
@@ -202,7 +205,7 @@ function countProjectionDirtyStats(chunks: ChunkRecord[]): {
 
   for (const chunk of chunks) {
     const mask = chunk.dirtyMask | chunk.projectionDirtyMask;
-    if (mask) {
+    if (mask & visibleDependencyMask) {
       dirtyMaskChunks += 1;
     }
     if (mask & CHUNK_DIRTY.moisture) {

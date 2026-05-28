@@ -23,7 +23,17 @@ export const CHUNK_DIRTY = {
   all: 127
 } as const;
 
+export const FIELD_DIRTY_MASK =
+  CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure | CHUNK_DIRTY.moisture | CHUNK_DIRTY.process;
+
 const REGION_SIZE_IN_CHUNKS = 4;
+
+export type ChunkFieldUpdateLane = "activeEnvironment" | "warmEnvironment" | "sleepingCatchup";
+
+export interface ChunkFieldUpdateDecision {
+  shouldUpdate: boolean;
+  lane: ChunkFieldUpdateLane;
+}
 
 export function createChunkGrid(config: SimulationConfig, terrain: StaticTerrain, fields: DynamicFields): ChunkGrid {
   const chunkSize = Math.max(4, Math.floor(config.chunkSize));
@@ -57,6 +67,7 @@ export function createChunkGrid(config: SimulationConfig, terrain: StaticTerrain
         projectionDirtyMask: CHUNK_DIRTY.all,
         summaryDirty: true,
         projectionDirty: true,
+        pressureDiffusionActive: false,
         agentCount: 0,
         summary: emptyChunkSummary(id)
       };
@@ -158,6 +169,11 @@ export function createSchedulerStats(totalChunks: number): ChunkSchedulerStats {
     warmChunks: 0,
     sleepingChunks: 0,
     dirtyChunks: totalChunks,
+    activeAgentOnlyChunks: 0,
+    activeFieldDirtyChunks: 0,
+    activeMixedDirtyChunks: 0,
+    warmFieldUpdateChunks: 0,
+    sleepingFieldUpdateChunks: 0,
     updatedChunks: 0,
     updatedCells: 0,
     preciseFieldUpdates: 0,
@@ -172,6 +188,7 @@ export function createSchedulerStats(totalChunks: number): ChunkSchedulerStats {
     diffusionNeighborChunks: 0,
     diffusionSelectedChunks: 0,
     diffusionEffectiveChunks: 0,
+    diffusionDeferredChunks: 0,
     diffusionNearZeroCandidateChunks: 0,
     diffusionNearZeroSkippedChunks: 0,
     lastTickPlan: null,
@@ -198,6 +215,9 @@ export function touchChunk(grid: ChunkGrid, chunkId: number, tick: number, dirty
   chunk.activity = "active";
   chunk.dirtyMask |= dirtyMask;
   chunk.projectionDirtyMask |= dirtyMask;
+  if (dirtyMask & CHUNK_DIRTY.pressure) {
+    chunk.pressureDiffusionActive = true;
+  }
   chunk.summaryDirty = true;
   chunk.projectionDirty = true;
 }
@@ -285,6 +305,30 @@ export function chunkShouldUpdate(chunk: ChunkRecord, tick: number, warmInterval
   return elapsed >= interval && scheduledChunkPhase(chunk, tick, interval);
 }
 
+export function chunkFieldUpdateDecision(
+  chunk: ChunkRecord,
+  tick: number,
+  warmInterval: number,
+  sleepingInterval: number
+): ChunkFieldUpdateDecision {
+  const hasFieldDirty = Boolean(chunk.dirtyMask & FIELD_DIRTY_MASK);
+  if (hasFieldDirty) {
+    return {
+      shouldUpdate: true,
+      lane: "activeEnvironment"
+    };
+  }
+
+  const lane: ChunkFieldUpdateLane = chunk.activity === "sleeping" && chunk.agentCount === 0 ? "sleepingCatchup" : "warmEnvironment";
+  const elapsed = tick - chunk.lastUpdatedTick;
+  const interval = Math.max(1, Math.floor(lane === "warmEnvironment" ? warmInterval : sleepingInterval));
+
+  return {
+    shouldUpdate: elapsed >= interval && scheduledChunkPhase(chunk, tick, interval),
+    lane
+  };
+}
+
 export function resetChunkAgentCounts(grid: ChunkGrid): number[] {
   const changedChunkIds: number[] = [];
   for (const chunk of grid.chunks) {
@@ -305,7 +349,10 @@ export function recordAgentChunk(grid: ChunkGrid, width: number, height: number,
   }
   chunk.agentCount += 1;
   chunk.summary.agentCount = chunk.agentCount;
-  touchChunk(grid, chunk.id, tick, CHUNK_DIRTY.agents);
+  chunk.lastTouchedTick = Math.max(chunk.lastTouchedTick, tick);
+  chunk.activity = "active";
+  chunk.projectionDirtyMask |= CHUNK_DIRTY.agents;
+  chunk.projectionDirty = true;
 }
 
 export function refreshChunkSummary(
@@ -474,16 +521,34 @@ export function refreshAllRegionSummaries(
 
 export function countChunkActivities(grid: ChunkGrid): Pick<
   ChunkSchedulerStats,
-  "activeChunks" | "warmChunks" | "sleepingChunks" | "dirtyChunks"
+  | "activeAgentOnlyChunks"
+  | "activeChunks"
+  | "activeFieldDirtyChunks"
+  | "activeMixedDirtyChunks"
+  | "dirtyChunks"
+  | "sleepingChunks"
+  | "warmChunks"
 > {
   let activeChunks = 0;
   let warmChunks = 0;
   let sleepingChunks = 0;
   let dirtyChunks = 0;
+  let activeAgentOnlyChunks = 0;
+  let activeFieldDirtyChunks = 0;
+  let activeMixedDirtyChunks = 0;
 
   for (const chunk of grid.chunks) {
     if (chunk.activity === "active") {
       activeChunks += 1;
+      const hasAgents = chunk.agentCount > 0 || Boolean(chunk.dirtyMask & CHUNK_DIRTY.agents);
+      const hasFieldDirty = Boolean(chunk.dirtyMask & FIELD_DIRTY_MASK);
+      if (hasAgents && hasFieldDirty) {
+        activeMixedDirtyChunks += 1;
+      } else if (hasAgents) {
+        activeAgentOnlyChunks += 1;
+      } else if (hasFieldDirty) {
+        activeFieldDirtyChunks += 1;
+      }
     } else if (chunk.activity === "warm") {
       warmChunks += 1;
     } else {
@@ -494,7 +559,15 @@ export function countChunkActivities(grid: ChunkGrid): Pick<
     }
   }
 
-  return { activeChunks, warmChunks, sleepingChunks, dirtyChunks };
+  return {
+    activeAgentOnlyChunks,
+    activeChunks,
+    activeFieldDirtyChunks,
+    activeMixedDirtyChunks,
+    dirtyChunks,
+    sleepingChunks,
+    warmChunks
+  };
 }
 
 export function neighborChunkIds(grid: ChunkGrid, chunk: ChunkRecord): number[] {
