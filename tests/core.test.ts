@@ -709,6 +709,49 @@ describe("typed simulation core", () => {
     expect(activeFrontierChunks.length).toBeGreaterThanOrEqual(stats.diffusionDeferredChunks);
   });
 
+  it("staggers pressure diffusion budget on large catch-up ticks", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 320,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 0,
+      pressureDecay: 1,
+      pressureDiffusion: 0.2,
+      pressureDiffusionChunkBudget: 64,
+      pressureDiffusionSourceBudget: 32,
+      pressureGrowth: 0,
+      resourceGrowth: 0,
+      sleepingChunkInterval: 8,
+      seed: 20260630
+    });
+    sim.pressure.fill(0);
+    for (const chunk of sim.world.chunks.chunks) {
+      chunk.activity = "sleeping";
+      chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
+      chunk.fieldWriteMask = 0;
+      chunk.projectionDirtyMask = 0;
+      chunk.projectionDirty = false;
+      chunk.pressureDiffusionActive = true;
+      chunk.pressureFrontierLastActiveTick = 16;
+      chunk.pressureFrontierStaleTicks = 0;
+      chunk.lastTouchedTick = -100;
+      chunk.lastUpdatedTick = 0;
+      sim.pressure[chunk.startY * sim.width + chunk.startX] = 4;
+    }
+
+    updateEnvironmentFields(sim.world, sim.config, 16, sim.random);
+
+    const stats = sim.world.chunks.schedulerStats;
+    expect(stats.estimatedCatchUpUpdatedCells).toBeGreaterThan(0);
+    expect(stats.pressureDiffusionBudgetStaggered).toBe(1);
+    expect(stats.effectivePressureDiffusionSourceBudget).toBe(16);
+    expect(stats.effectivePressureDiffusionChunkBudget).toBe(32);
+    expect(stats.diffusionSeedChunks).toBeLessThanOrEqual(stats.effectivePressureDiffusionSourceBudget);
+    expect(stats.diffusionSelectedChunks).toBeLessThanOrEqual(stats.effectivePressureDiffusionChunkBudget);
+  });
+
   it("ages out stale retained pressure frontiers instead of keeping them as permanent sources", () => {
     const sim = new Simulation({
       environmentMode: "flux",

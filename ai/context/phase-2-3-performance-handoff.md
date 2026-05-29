@@ -271,6 +271,16 @@ After the Phase 2.3.31 core tick tail profiling pass:
 - The new counters show the remaining tail shape when the profile is under budget: `warmUpdatedCells p95 35840`, `sleepingUpdatedCells p95 15360`, `catchUpUpdatedCells p95 47104`, `diffusionComputedCells p95 87040`, `fieldAndDiffusionCells p95 155648`, and `catchUpAndDiffusionCells p95 130048`.
 - Interpretation: the prior overlay-visible failures were not caused by overlay rendering. When red samples appear, the next structural target should be same-tick stacking between warm/sleeping catch-up and pressure diffusion, not another render pass. A background/hidden tab profile produced `runtime.backlogTicks p95 6` while `sim.step` was green; do not use hidden-tab profiles as acceptance evidence.
 
+After the Phase 2.3.32 same-tick stack control pass:
+
+- Large worlds now estimate warm/sleeping catch-up cells before running field updates. If the tick has catch-up work, the same tick pressure diffusion source/chunk budget is reduced by half, with existing minimum budgets still enforced.
+- The pass is deterministic: it depends only on tick, chunk state, configured cadence, and world size. It is not coupled to browser frame timing, backlog, or measured milliseconds.
+- Source selection still happens before field updates, so pressure field-dirty/frontier state is not lost by the catch-up pass. Diffusion still runs with a smaller effective budget rather than being disabled.
+- New scheduler/profile counters: `core.scheduler.estimatedCatchUpUpdatedCells`, `core.scheduler.effectivePressureDiffusionSourceBudget`, `core.scheduler.effectivePressureDiffusionChunkBudget`, and `core.scheduler.pressureDiffusionBudgetStaggered`.
+- Validation: `npm run test -- tests/core.test.ts tests/terrain-profiler.test.ts` passed with `77` tests; `npm run check` passed with `101` tests; `npm run build` passed; `npm run bench:core` completed with initialize `~3201.23ms`, cold `step(16) ~3354.00ms`, hot `step(16) ~358.90ms`, and hot snapshot stride 48 `~3.0599ms`.
+- A visible 30s terrain-only browser profile passed: `sim.step p50/p95 ~17.0ms/31.6ms`, `runtime.backlogTicks p95 ~1.0`, `render.total p95 ~2.4ms`, `core.world.diffusePressure p95 ~3.4ms`, `diffusionComputedCells p95 52224`, `effectivePressureDiffusionChunkBudget p95 64`, and `catchUpAndDiffusionCells p95 95232`.
+- Pressure-visible profile evidence is still required before closing pressure-related Project items.
+
 ## Historical Profile Superseded By Current Baseline
 
 Scenario:

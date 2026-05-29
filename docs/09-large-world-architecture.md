@@ -362,6 +362,8 @@ Phase 2.3.28 makes that cadence explicit for large worlds. The default configure
 
 The 30s terrain-only profile after this pass shows `catchUpUpdatedCells p95` falling from `88064` to `47104`, `core.world.environmentChunks p95` from about `29.2ms` to `16.4ms`, and `sim.step p95` from `44.5ms` to `31.1ms`. The remaining profile failure is render-side: `projection.paintCells p95` is still about `14ms` while only about `25` chunks are projected.
 
+Phase 2.3.32 adds deterministic same-tick stack control between catch-up and pressure diffusion. Before field updates run, the scheduler estimates how many warm/sleeping cells are due for catch-up. On large worlds only, catch-up ticks reduce the same tick pressure diffusion source and chunk budgets by half while still respecting minimum budgets. This is a lane-width stagger, not a browser-runtime throttle: the decision is made from tick and chunk state, and diffusion still runs instead of being skipped.
+
 ## Projection And Render LOD
 
 The UI should stop treating the full world as a cell-by-cell canvas redraw every frame.

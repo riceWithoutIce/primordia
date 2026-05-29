@@ -153,6 +153,10 @@ describe("terrain baseline profiler", () => {
     sink?.recordValue("core.scheduler.directPressurePromotedChunks", 2);
     sink?.recordValue("core.scheduler.effectiveWarmChunkInterval", 8);
     sink?.recordValue("core.scheduler.effectiveSleepingChunkInterval", 32);
+    sink?.recordValue("core.scheduler.estimatedCatchUpUpdatedCells", 4096);
+    sink?.recordValue("core.scheduler.effectivePressureDiffusionSourceBudget", 32);
+    sink?.recordValue("core.scheduler.effectivePressureDiffusionChunkBudget", 64);
+    sink?.recordValue("core.scheduler.pressureDiffusionBudgetStaggered", 1);
     sink?.recordValue("core.tail.catchUpAndDiffusionCells", 4096);
     profiler.recordValue("runtime.backlogTicks", 1.5);
     profiler.recordValue("runtime.mode", 2);
@@ -186,6 +190,10 @@ describe("terrain baseline profiler", () => {
     expect(report.values["core.scheduler.directPressurePromotedChunks"]?.p95).toBe(2);
     expect(report.values["core.scheduler.effectiveWarmChunkInterval"]?.p95).toBe(8);
     expect(report.values["core.scheduler.effectiveSleepingChunkInterval"]?.p95).toBe(32);
+    expect(report.values["core.scheduler.estimatedCatchUpUpdatedCells"]?.p95).toBe(4096);
+    expect(report.values["core.scheduler.effectivePressureDiffusionSourceBudget"]?.p95).toBe(32);
+    expect(report.values["core.scheduler.effectivePressureDiffusionChunkBudget"]?.p95).toBe(64);
+    expect(report.values["core.scheduler.pressureDiffusionBudgetStaggered"]?.p95).toBe(1);
     expect(report.values["core.tail.catchUpAndDiffusionCells"]?.p95).toBe(4096);
     expect(report.values["runtime.backlogTicks"]?.p95).toBe(1.5);
     expect(report.values["runtime.mode"]?.p95).toBe(2);

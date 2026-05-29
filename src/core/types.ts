@@ -245,6 +245,10 @@ export interface ChunkSchedulerStats {
   directPressureWriteImpulse: number;
   effectiveWarmChunkInterval: number;
   effectiveSleepingChunkInterval: number;
+  estimatedCatchUpUpdatedCells: number;
+  effectivePressureDiffusionSourceBudget: number;
+  effectivePressureDiffusionChunkBudget: number;
+  pressureDiffusionBudgetStaggered: number;
   diffusionBackgroundSourceChunks: number;
   warmFieldUpdateChunks: number;
   sleepingFieldUpdateChunks: number;

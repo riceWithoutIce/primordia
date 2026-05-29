@@ -89,8 +89,10 @@ interface DiffusionResult {
 
 interface DiffusionOptions {
   deferredChunkIds?: Set<number>;
+  chunkBudget?: number;
   frontierChunkIds?: Iterable<number>;
   sourceChunkIds?: Iterable<number>;
+  sourceBudget?: number;
   sourceStats?: PressureDiffusionSourceSelectionStats;
 }
 
@@ -117,6 +119,12 @@ interface PressureDiffusionSourceSelectionStats {
   skippedBackgroundChunks: number;
 }
 
+interface PressureDiffusionBudget {
+  chunkBudget: number;
+  sourceBudget: number;
+  staggered: boolean;
+}
+
 const TERRAIN_MOISTURE_VISUAL_SCALE = 0.22;
 const TERRAIN_MOISTURE_VISUAL_STEP = 1 / 255;
 const PRESSURE_DIFFUSION_CHUNK_DELTA_THRESHOLD = 0.25;
@@ -132,6 +140,7 @@ const LARGE_WORLD_CELL_LIMIT = 65536;
 const PRESSURE_DIFFUSION_BACKGROUND_INTERVAL = 12;
 const MIN_PRESSURE_DIFFUSION_CHUNK_BUDGET = 8;
 const MIN_PRESSURE_DIFFUSION_SOURCE_BUDGET = 4;
+const PRESSURE_DIFFUSION_STAGGER_BUDGET_FRACTION = 0.5;
 
 export function updateWorld(
   world: WorldState,
@@ -227,8 +236,15 @@ export function updateEnvironmentFields(
   let refreshChunkSummariesMs = 0;
   let summaryRefreshChunks = 0;
   let summaryRefreshRegions = 0;
+  const estimatedCatchUpUpdatedCells = estimateCatchUpUpdatedCells(
+    world,
+    tick,
+    fieldCadence.warmInterval,
+    fieldCadence.sleepingInterval
+  );
+  const pressureDiffusionBudget = effectivePressureDiffusionBudget(config, world, estimatedCatchUpUpdatedCells, largeWorld);
   const pressureDiffusionSourceSelection =
-    largeWorld ? selectPressureDiffusionSourceChunks(world, config, tick) : undefined;
+    largeWorld ? selectPressureDiffusionSourceChunks(world, config, tick, pressureDiffusionBudget.sourceBudget) : undefined;
   const pressureDiffusionDeferredChunks = pressureDiffusionSourceSelection ? new Set<number>() : undefined;
 
   measureCoreProfile(profile, "core.world.environmentChunks", () => {
@@ -295,8 +311,10 @@ export function updateEnvironmentFields(
 
   const diffusion = measureCoreProfile(profile, "core.world.diffusePressure", () =>
     diffusePressure(world, config, tick, profile, {
+      chunkBudget: pressureDiffusionBudget.chunkBudget,
       deferredChunkIds: pressureDiffusionDeferredChunks,
       frontierChunkIds: pressureDiffusionSourceSelection?.frontierChunkIds,
+      sourceBudget: pressureDiffusionBudget.sourceBudget,
       sourceChunkIds: pressureDiffusionSourceSelection?.chunkIds,
       sourceStats: pressureDiffusionSourceSelection?.stats
     })
@@ -335,6 +353,10 @@ export function updateEnvironmentFields(
     directPressureWriteImpulse: directFieldWriteCounts.directPressureWriteImpulse,
     effectiveWarmChunkInterval: fieldCadence.warmInterval,
     effectiveSleepingChunkInterval: fieldCadence.sleepingInterval,
+    estimatedCatchUpUpdatedCells,
+    effectivePressureDiffusionSourceBudget: pressureDiffusionBudget.sourceBudget,
+    effectivePressureDiffusionChunkBudget: pressureDiffusionBudget.chunkBudget,
+    pressureDiffusionBudgetStaggered: pressureDiffusionBudget.staggered ? 1 : 0,
     updatedChunks,
     updatedCells,
     preciseFieldUpdates,
@@ -380,6 +402,10 @@ export function updateEnvironmentFields(
   profile?.recordValue("core.scheduler.directPressureWriteImpulse", directFieldWriteCounts.directPressureWriteImpulse);
   profile?.recordValue("core.scheduler.effectiveWarmChunkInterval", fieldCadence.warmInterval);
   profile?.recordValue("core.scheduler.effectiveSleepingChunkInterval", fieldCadence.sleepingInterval);
+  profile?.recordValue("core.scheduler.estimatedCatchUpUpdatedCells", estimatedCatchUpUpdatedCells);
+  profile?.recordValue("core.scheduler.effectivePressureDiffusionSourceBudget", pressureDiffusionBudget.sourceBudget);
+  profile?.recordValue("core.scheduler.effectivePressureDiffusionChunkBudget", pressureDiffusionBudget.chunkBudget);
+  profile?.recordValue("core.scheduler.pressureDiffusionBudgetStaggered", pressureDiffusionBudget.staggered ? 1 : 0);
   profile?.recordValue("core.scheduler.warmEnvironmentChunks", warmEnvironmentChunks);
   profile?.recordValue("core.scheduler.warmFieldUpdateChunks", warmFieldUpdateChunks);
   profile?.recordValue("core.scheduler.sleepingCatchupChunks", sleepingCatchupChunks);
@@ -524,10 +550,16 @@ export function diffusePressure(
   const frontierChunks = options.sourceStats?.frontierChunks ?? 0;
   const skippedBackgroundChunks = options.sourceStats?.skippedBackgroundChunks ?? 0;
   const selectedSourceBudget = explicitSourceChunkIds
-    ? pressureDiffusionSourceBudget(config, explicitSourceChunkIds.size)
+    ? Math.min(
+        explicitSourceChunkIds.size,
+        Math.max(MIN_PRESSURE_DIFFUSION_SOURCE_BUDGET, Math.floor(options.sourceBudget ?? config.pressureDiffusionSourceBudget))
+      )
     : Number.POSITIVE_INFINITY;
   const selectedChunkBudget = explicitSourceChunkIds
-    ? pressureDiffusionChunkBudget(config, world.chunks.chunks.length)
+    ? Math.min(
+        world.chunks.chunks.length,
+        Math.max(MIN_PRESSURE_DIFFUSION_CHUNK_BUDGET, Math.floor(options.chunkBudget ?? config.pressureDiffusionChunkBudget))
+      )
     : Number.POSITIVE_INFINITY;
   let skippedSleepingChunks = 0;
   let nearZeroCandidateChunks = 0;
@@ -864,7 +896,50 @@ function pressureDirectPromotionBudget(sourceBudget: number, regionCandidates: n
   return Math.min(regionCandidates, directBudget);
 }
 
-function selectPressureDiffusionSourceChunks(world: WorldState, config: SimulationConfig, tick: number): PressureDiffusionSourceSelection {
+function estimateCatchUpUpdatedCells(world: WorldState, tick: number, warmInterval: number, sleepingInterval: number): number {
+  let cells = 0;
+  for (const chunk of world.chunks.chunks) {
+    const fieldUpdate = chunkFieldUpdateDecision(chunk, tick, warmInterval, sleepingInterval);
+    if (!fieldUpdate.shouldUpdate || fieldUpdate.lane === "activeEnvironment") {
+      continue;
+    }
+    cells += chunk.width * chunk.height;
+  }
+  return cells;
+}
+
+function effectivePressureDiffusionBudget(
+  config: SimulationConfig,
+  world: WorldState,
+  catchUpUpdatedCells: number,
+  largeWorld: boolean
+): PressureDiffusionBudget {
+  const configuredSourceBudget = pressureDiffusionSourceBudget(config, world.chunks.chunks.length);
+  const configuredChunkBudget = pressureDiffusionChunkBudget(config, world.chunks.chunks.length);
+  if (!largeWorld || catchUpUpdatedCells <= 0) {
+    return {
+      chunkBudget: configuredChunkBudget,
+      sourceBudget: configuredSourceBudget,
+      staggered: false
+    };
+  }
+
+  return {
+    chunkBudget: Math.max(MIN_PRESSURE_DIFFUSION_CHUNK_BUDGET, Math.floor(configuredChunkBudget * PRESSURE_DIFFUSION_STAGGER_BUDGET_FRACTION)),
+    sourceBudget: Math.max(
+      MIN_PRESSURE_DIFFUSION_SOURCE_BUDGET,
+      Math.floor(configuredSourceBudget * PRESSURE_DIFFUSION_STAGGER_BUDGET_FRACTION)
+    ),
+    staggered: true
+  };
+}
+
+function selectPressureDiffusionSourceChunks(
+  world: WorldState,
+  config: SimulationConfig,
+  tick: number,
+  effectiveSourceBudget?: number
+): PressureDiffusionSourceSelection {
   const sourceChunkIds = new Set<number>();
   const frontierChunkIds = new Set<number>();
   const directCandidatesByRegion = new Map<number, { chunk: ChunkRecord; score: number }>();
@@ -878,7 +953,10 @@ function selectPressureDiffusionSourceChunks(world: WorldState, config: Simulati
   let frontierChunks = 0;
   let skippedBackgroundChunks = 0;
   const interval = PRESSURE_DIFFUSION_BACKGROUND_INTERVAL;
-  const sourceBudget = pressureDiffusionSourceBudget(config, world.chunks.chunks.length);
+  const sourceBudget = Math.max(
+    MIN_PRESSURE_DIFFUSION_SOURCE_BUDGET,
+    Math.floor(effectiveSourceBudget ?? pressureDiffusionSourceBudget(config, world.chunks.chunks.length))
+  );
 
   for (const chunk of world.chunks.chunks) {
     if (chunk.pressureDiffusionActive || chunk.fieldDirtyMask & CHUNK_DIRTY.pressure) {
