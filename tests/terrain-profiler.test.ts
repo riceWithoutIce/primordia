@@ -126,7 +126,10 @@ describe("terrain baseline profiler", () => {
     const sink = profiler.coreSink();
 
     sink?.recordDuration("core.tick.updateWorld", 7);
+    sink?.recordDuration("core.world.refreshChunkSummaries", 2);
+    sink?.recordDuration("core.world.warmCatchUpUpdate", 3);
     sink?.recordValue("core.dirty.moistureAfterEnvironment", 42);
+    sink?.recordValue("core.world.warmUpdatedCells", 2048);
     sink?.recordValue("core.diffusion.seedChunks", 3);
     sink?.recordValue("core.diffusion.backgroundSourceChunks", 1);
     sink?.recordValue("core.diffusion.deferredChunks", 1);
@@ -150,12 +153,16 @@ describe("terrain baseline profiler", () => {
     sink?.recordValue("core.scheduler.directPressurePromotedChunks", 2);
     sink?.recordValue("core.scheduler.effectiveWarmChunkInterval", 8);
     sink?.recordValue("core.scheduler.effectiveSleepingChunkInterval", 32);
+    sink?.recordValue("core.tail.catchUpAndDiffusionCells", 4096);
     profiler.recordValue("runtime.backlogTicks", 1.5);
     profiler.recordValue("runtime.mode", 2);
 
     const report = profiler.report(createScenario(), 500);
     expect(report.durations["core.tick.updateWorld"]?.p95).toBe(7);
+    expect(report.durations["core.world.refreshChunkSummaries"]?.p95).toBe(2);
+    expect(report.durations["core.world.warmCatchUpUpdate"]?.p95).toBe(3);
     expect(report.values["core.dirty.moistureAfterEnvironment"]?.p95).toBe(42);
+    expect(report.values["core.world.warmUpdatedCells"]?.p95).toBe(2048);
     expect(report.values["core.diffusion.seedChunks"]?.p95).toBe(3);
     expect(report.values["core.diffusion.backgroundSourceChunks"]?.p95).toBe(1);
     expect(report.values["core.diffusion.deferredChunks"]?.p95).toBe(1);
@@ -179,6 +186,7 @@ describe("terrain baseline profiler", () => {
     expect(report.values["core.scheduler.directPressurePromotedChunks"]?.p95).toBe(2);
     expect(report.values["core.scheduler.effectiveWarmChunkInterval"]?.p95).toBe(8);
     expect(report.values["core.scheduler.effectiveSleepingChunkInterval"]?.p95).toBe(32);
+    expect(report.values["core.tail.catchUpAndDiffusionCells"]?.p95).toBe(4096);
     expect(report.values["runtime.backlogTicks"]?.p95).toBe(1.5);
     expect(report.values["runtime.mode"]?.p95).toBe(2);
   });

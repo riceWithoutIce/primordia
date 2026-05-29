@@ -67,6 +67,7 @@ interface EnvironmentFieldUpdateResult {
 
 interface DiffusionResult {
   agedOutFrontierChunks: number;
+  computedCells: number;
   deferredChunks: number;
   effectiveChunks: number;
   frontierChunks: number;
@@ -217,6 +218,13 @@ export function updateEnvironmentFields(
   let sleepingCatchupChunks = 0;
   let warmFieldUpdateChunks = 0;
   let sleepingFieldUpdateChunks = 0;
+  let activeEnvironmentCells = 0;
+  let warmUpdatedCells = 0;
+  let sleepingUpdatedCells = 0;
+  let activeEnvironmentMs = 0;
+  let warmCatchUpMs = 0;
+  let sleepingCatchUpMs = 0;
+  let refreshChunkSummariesMs = 0;
   let summaryRefreshChunks = 0;
   let summaryRefreshRegions = 0;
   const pressureDiffusionSourceSelection =
@@ -232,29 +240,41 @@ export function updateEnvironmentFields(
 
       const elapsed = Math.max(1, tick - chunk.lastUpdatedTick);
       const isCatchUp = fieldUpdate.lane !== "activeEnvironment" && elapsed > 1;
+      const chunkStart = profile?.now() ?? 0;
       const result = updateEnvironmentChunk(world, config, cap, chunk, elapsed, isCatchUp, fieldCadence.sleepingInterval);
+      const chunkMs = profile ? profile.now() - chunkStart : 0;
       updatedChunks += 1;
       updatedCells += result.updatedCells;
       markChunkProjectionDirty(world.chunks, chunk.id, result.dirtyMask);
       if (fieldUpdate.lane === "warmEnvironment") {
         warmEnvironmentChunks += 1;
         warmFieldUpdateChunks += 1;
+        warmUpdatedCells += result.updatedCells;
+        warmCatchUpMs += chunkMs;
         catchUpFieldUpdates += 1;
         catchUpUpdatedCells += result.updatedCells;
       } else if (fieldUpdate.lane === "sleepingCatchup") {
         sleepingCatchupChunks += 1;
         sleepingFieldUpdateChunks += 1;
+        sleepingUpdatedCells += result.updatedCells;
+        sleepingCatchUpMs += chunkMs;
         catchUpFieldUpdates += 1;
         catchUpUpdatedCells += result.updatedCells;
       } else {
         preciseFieldUpdates += 1;
         preciseUpdatedCells += result.updatedCells;
+        activeEnvironmentCells += result.updatedCells;
+        activeEnvironmentMs += chunkMs;
         activeEnvironmentChunks += 1;
       }
       chunk.lastUpdatedTick = tick;
       chunk.dirtyMask = 0;
       chunk.fieldDirtyMask = 0;
+      const summaryStart = profile?.now() ?? 0;
       refreshChunkSummary(world.chunks, chunk, world.terrain, world.fields, world.width);
+      if (profile) {
+        refreshChunkSummariesMs += profile.now() - summaryStart;
+      }
       summaryRefreshChunks += 1;
     }
   });
@@ -264,6 +284,13 @@ export function updateEnvironmentFields(
   profile?.recordValue("core.world.preciseUpdatedCells", preciseUpdatedCells);
   profile?.recordValue("core.world.catchUpUpdatedChunks", catchUpFieldUpdates);
   profile?.recordValue("core.world.catchUpUpdatedCells", catchUpUpdatedCells);
+  profile?.recordValue("core.world.activeEnvironmentCells", activeEnvironmentCells);
+  profile?.recordValue("core.world.warmUpdatedCells", warmUpdatedCells);
+  profile?.recordValue("core.world.sleepingUpdatedCells", sleepingUpdatedCells);
+  profile?.recordDuration("core.world.activeEnvironmentUpdate", activeEnvironmentMs);
+  profile?.recordDuration("core.world.warmCatchUpUpdate", warmCatchUpMs);
+  profile?.recordDuration("core.world.sleepingCatchUpUpdate", sleepingCatchUpMs);
+  profile?.recordDuration("core.world.refreshChunkSummaries", refreshChunkSummariesMs);
   profile?.recordValue("core.dirty.moistureAfterEnvironment", countProjectionDirtyMask(world, CHUNK_DIRTY.moisture));
 
   const diffusion = measureCoreProfile(profile, "core.world.diffusePressure", () =>
@@ -359,6 +386,9 @@ export function updateEnvironmentFields(
   profile?.recordValue("core.scheduler.sleepingFieldUpdateChunks", sleepingFieldUpdateChunks);
   profile?.recordValue("core.scheduler.summaryRefreshChunks", summaryRefreshChunks);
   profile?.recordValue("core.scheduler.summaryRefreshRegions", summaryRefreshRegions);
+  profile?.recordValue("core.tail.fieldAndDiffusionCells", updatedCells + diffusion.computedCells);
+  profile?.recordValue("core.tail.catchUpAndDiffusionCells", catchUpUpdatedCells + diffusion.computedCells);
+  profile?.recordValue("core.tail.summaryAndDiffusionChunks", summaryRefreshChunks + summaryRefreshRegions + diffusion.selectedChunks);
   const result: EnvironmentFieldUpdateResult = {
     activeEnvironmentChunks,
     catchUpUpdatedCells,
@@ -456,6 +486,7 @@ export function diffusePressure(
   const diffusion = clamp(config.pressureDiffusion, 0, 0.25);
   if (diffusion <= 0) {
     const result = {
+      computedCells: 0,
       deferredChunks: 0,
       effectiveChunks: 0,
       backgroundSourceChunks: 0,
@@ -691,6 +722,7 @@ export function diffusePressure(
     refreshRegionsById(world.regions, world.chunks, world.terrain, world.fields, world.width, changedRegionIds)
   );
   const result = {
+    computedCells,
     deferredChunks,
     effectiveChunks: changedChunks,
     agedOutFrontierChunks,

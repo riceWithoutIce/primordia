@@ -261,6 +261,16 @@ After the Phase 2.3.30 field overlay split:
 - A 30s post-fix resources+pressure+lineages profile reduced render cost to `render.total p95 ~4.8ms`, `render.projection.total p95 ~1.5ms`, `fieldOverlay.paintCells p95 ~2.4ms`, `fieldOverlay.projectedCells p95 15744`, with stable backlog. The sample still failed its generic assessment because `sim.step p95 ~41.2ms`; treat that as the next core/browser variance item, not an overlay-render regression.
 - Screenshot validation showed the low-resolution field overlay visibly composited over the terrain base map.
 
+After the Phase 2.3.31 core tick tail profiling pass:
+
+- This pass is observability-only. It does not change scheduler cadence, pressure diffusion selection, field update semantics, ecology rules, or render behavior.
+- New deep-profile buckets split `core.world.environmentChunks` into active, warm catch-up, sleeping catch-up, and per-chunk summary refresh cost: `core.world.activeEnvironmentUpdate`, `core.world.warmCatchUpUpdate`, `core.world.sleepingCatchUpUpdate`, `core.world.refreshChunkSummaries`, `core.world.activeEnvironmentCells`, `core.world.warmUpdatedCells`, and `core.world.sleepingUpdatedCells`.
+- New combined tail counters expose same-tick work stacking: `core.tail.fieldAndDiffusionCells`, `core.tail.catchUpAndDiffusionCells`, and `core.tail.summaryAndDiffusionChunks`.
+- Validation: `npm run check` passed with `100` tests, `npm run build` passed, and `npm run bench:core` completed with initialize `~4199.49ms`, cold `step(16)` `~3910.31ms`, hot `step(16)` `~401.11ms`, hot snapshot stride 48 `~3.8951ms`; treat the Node benchmark as noisy but non-regressive in kind.
+- A visible 30s terrain-only browser profile passed after the counters landed: `sim.step p50/p95 ~18.2ms/26.8ms`, `runtime.backlogTicks p95 ~1.0`, `render.total p95 ~2.2ms`, and `core.tick.updateWorld p95 ~15.9ms`.
+- The new counters show the remaining tail shape when the profile is under budget: `warmUpdatedCells p95 35840`, `sleepingUpdatedCells p95 15360`, `catchUpUpdatedCells p95 47104`, `diffusionComputedCells p95 87040`, `fieldAndDiffusionCells p95 155648`, and `catchUpAndDiffusionCells p95 130048`.
+- Interpretation: the prior overlay-visible failures were not caused by overlay rendering. When red samples appear, the next structural target should be same-tick stacking between warm/sleeping catch-up and pressure diffusion, not another render pass. A background/hidden tab profile produced `runtime.backlogTicks p95 6` while `sim.step` was green; do not use hidden-tab profiles as acceptance evidence.
+
 ## Historical Profile Superseded By Current Baseline
 
 Scenario:
