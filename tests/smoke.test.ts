@@ -127,7 +127,9 @@ describe("primordia simulation smoke", () => {
     }
 
     expect(html).toContain("data-base-layer=\"terrain\"");
-    expect(html).toContain("data-overlay=\"resources\" checked");
+    expect(html).toContain("id=\"overlay-resources\" type=\"checkbox\" data-overlay=\"resources\"");
+    expect(html).toContain("data-overlay=\"agents\" checked");
+    expect(html).toContain("data-overlay=\"processes\" checked");
   });
 
   it("keeps terrain visualization configurable and covers cold biomes", () => {
