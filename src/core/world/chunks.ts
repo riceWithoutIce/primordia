@@ -26,6 +26,7 @@ export const CHUNK_DIRTY = {
 export const FIELD_DIRTY_MASK =
   CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure | CHUNK_DIRTY.moisture | CHUNK_DIRTY.process;
 
+const LARGE_WORLD_FIELD_CATCHUP_INTERVAL_SCALE = 2;
 const REGION_SIZE_IN_CHUNKS = 4;
 
 export type ChunkFieldUpdateLane = "activeEnvironment" | "warmEnvironment" | "sleepingCatchup";
@@ -33,6 +34,11 @@ export type ChunkFieldUpdateLane = "activeEnvironment" | "warmEnvironment" | "sl
 export interface ChunkFieldUpdateDecision {
   shouldUpdate: boolean;
   lane: ChunkFieldUpdateLane;
+}
+
+export interface ChunkFieldUpdateCadence {
+  warmInterval: number;
+  sleepingInterval: number;
 }
 
 export function createChunkGrid(config: SimulationConfig, terrain: StaticTerrain, fields: DynamicFields): ChunkGrid {
@@ -70,6 +76,8 @@ export function createChunkGrid(config: SimulationConfig, terrain: StaticTerrain
         summaryDirty: true,
         projectionDirty: true,
         pressureDiffusionActive: false,
+        pressureFrontierLastActiveTick: 0,
+        pressureFrontierStaleTicks: 0,
         pressureWriteCells: 0,
         pressureWriteImpulse: 0,
         pressureWriteLastTick: 0,
@@ -184,9 +192,13 @@ export function createSchedulerStats(totalChunks: number): ChunkSchedulerStats {
     directPressureWriteChunks: 0,
     directMixedFieldWriteChunks: 0,
     directPressureCandidateChunks: 0,
+    directPressureRegionCandidateChunks: 0,
+    directPressurePromotionBudget: 0,
     directPressurePromotedChunks: 0,
     directPressureSuppressedChunks: 0,
     directPressureWriteImpulse: 0,
+    effectiveWarmChunkInterval: 0,
+    effectiveSleepingChunkInterval: 0,
     diffusionBackgroundSourceChunks: 0,
     warmFieldUpdateChunks: 0,
     sleepingFieldUpdateChunks: 0,
@@ -205,6 +217,8 @@ export function createSchedulerStats(totalChunks: number): ChunkSchedulerStats {
     diffusionSelectedChunks: 0,
     diffusionEffectiveChunks: 0,
     diffusionFrontierChunks: 0,
+    diffusionStaleFrontierChunks: 0,
+    diffusionAgedOutFrontierChunks: 0,
     diffusionRetainedFrontierChunks: 0,
     diffusionDeferredChunks: 0,
     diffusionNearZeroCandidateChunks: 0,
@@ -238,6 +252,8 @@ export function touchChunk(grid: ChunkGrid, chunkId: number, tick: number, dirty
   chunk.projectionDirtyMask |= dirtyMask;
   if (fieldMask & CHUNK_DIRTY.pressure) {
     chunk.pressureDiffusionActive = true;
+    chunk.pressureFrontierLastActiveTick = tick;
+    chunk.pressureFrontierStaleTicks = 0;
   }
   chunk.summaryDirty = true;
   chunk.projectionDirty = true;
@@ -368,6 +384,14 @@ export function updateChunkActivity(
 
 export function chunkShouldUpdate(chunk: ChunkRecord, tick: number, warmInterval: number, sleepingInterval: number): boolean {
   return chunkFieldUpdateDecision(chunk, tick, warmInterval, sleepingInterval).shouldUpdate;
+}
+
+export function chunkFieldUpdateCadence(config: SimulationConfig, largeWorld: boolean): ChunkFieldUpdateCadence {
+  const scale = largeWorld ? LARGE_WORLD_FIELD_CATCHUP_INTERVAL_SCALE : 1;
+  return {
+    warmInterval: Math.max(1, Math.floor(config.warmChunkInterval) * scale),
+    sleepingInterval: Math.max(1, Math.floor(config.sleepingChunkInterval) * scale)
+  };
 }
 
 export function chunkFieldUpdateDecision(

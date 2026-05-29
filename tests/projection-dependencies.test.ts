@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_OVERLAYS } from "../src/app/render/mapViewTypes";
-import { createProjection, selectProjectionChunks, type ProjectionProfileStats } from "../src/app/render/projection";
+import {
+  createProjection,
+  selectProjectionChunks,
+  shouldUseTerrainProjectionFastPath,
+  type ProjectionProfileStats
+} from "../src/app/render/projection";
+import { terrainColor } from "../src/app/render/mapViews";
 import {
   overlayAffectsProjection,
   projectionDependencyMask,
@@ -113,6 +119,35 @@ describe("visibility-aware projection invalidation", () => {
 
     expect(mask & CHUNK_DIRTY.moisture).toBe(CHUNK_DIRTY.moisture);
     expect(mask & CHUNK_DIRTY.pressure).toBe(CHUNK_DIRTY.pressure);
+  });
+
+  it("uses the terrain fast path only when projection overlays are absent", () => {
+    expect(shouldUseTerrainProjectionFastPath("terrain", { ...DEFAULT_OVERLAYS, resources: false, pressure: false })).toBe(true);
+    expect(shouldUseTerrainProjectionFastPath("terrain", { ...DEFAULT_OVERLAYS, resources: true, pressure: false })).toBe(false);
+    expect(shouldUseTerrainProjectionFastPath("terrain", { ...DEFAULT_OVERLAYS, resources: false, pressure: true })).toBe(false);
+    expect(shouldUseTerrainProjectionFastPath("terrain", { ...DEFAULT_OVERLAYS, lineages: true })).toBe(false);
+    expect(shouldUseTerrainProjectionFastPath("resource", { ...DEFAULT_OVERLAYS, resources: false, pressure: false })).toBe(false);
+  });
+
+  it("matches generic terrain cell color when using the terrain projection fast path", () => {
+    const sim = createCleanProjectionSimulation();
+    const imageFactory = (width: number, height: number) =>
+      ({
+        width,
+        height,
+        data: new Uint8ClampedArray(width * height * 4)
+      }) as ImageData;
+
+    const projection = createProjection(sim, "terrain", { ...DEFAULT_OVERLAYS, resources: false, pressure: false }, null, {
+      imageFactory,
+      now: () => 0,
+      recordProjection: () => undefined
+    });
+    const index = sim.index(8, 8);
+    const offset = index * 4;
+    const expected = terrainColor(sim.environmentAt(index));
+
+    expect(Array.from(projection.image.data.slice(offset, offset + 4))).toEqual([...expected, 255]);
   });
 
   it("marks environment events with field-specific projection masks", () => {

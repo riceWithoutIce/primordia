@@ -133,10 +133,60 @@ describe("typed simulation core", () => {
     expect(first.sleepingChunks).toBe(sim.world.chunks.chunks.length);
 
     sim.step(7);
+    const beforeEffectiveCadence = sim.metrics();
+    expect(beforeEffectiveCadence.updatedChunks).toBe(0);
+
+    sim.step(8);
     const phased = sim.metrics();
     expect(phased.updatedChunks).toBeGreaterThan(0);
     expect(phased.updatedChunks).toBeLessThan(sim.world.chunks.chunks.length);
     expect(sim.world.chunks.schedulerStats.catchUpFieldUpdates).toBe(phased.updatedChunks);
+  });
+
+  it("uses a wider deterministic catch-up cadence for large worlds", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 960,
+      height: 640,
+      chunkSize: 32,
+      initialAgents: 0,
+      resourceGrowth: 1,
+      pressureDiffusion: 0,
+      warmChunkInterval: 4,
+      sleepingChunkInterval: 16,
+      seed: 20260628
+    });
+
+    sim.step(32);
+
+    const stats = sim.world.chunks.schedulerStats;
+    expect(stats.effectiveWarmChunkInterval).toBe(8);
+    expect(stats.effectiveSleepingChunkInterval).toBe(32);
+    expect(stats.updatedChunks).toBeGreaterThan(0);
+    expect(stats.updatedChunks).toBeLessThan(40);
+    expect(stats.catchUpFieldUpdates).toBe(stats.updatedChunks);
+  });
+
+  it("keeps configured catch-up cadence unchanged for small worlds", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 256,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 0,
+      resourceGrowth: 1,
+      pressureDiffusion: 0,
+      warmChunkInterval: 4,
+      sleepingChunkInterval: 16,
+      seed: 20260629
+    });
+
+    sim.step(16);
+
+    const stats = sim.world.chunks.schedulerStats;
+    expect(stats.effectiveWarmChunkInterval).toBe(4);
+    expect(stats.effectiveSleepingChunkInterval).toBe(16);
+    expect(stats.updatedChunks).toBeGreaterThan(0);
   });
 
   it("records deterministic scheduler lane reports for identical seeds and ticks", () => {
@@ -490,10 +540,66 @@ describe("typed simulation core", () => {
 
     const stats = sim.world.chunks.schedulerStats;
     expect(stats.directPressureCandidateChunks).toBe(10);
-    const expectedPromoted = sim.config.pressureDiffusionSourceBudget;
+    expect(stats.directPressureRegionCandidateChunks).toBeLessThanOrEqual(sim.world.regions.regions.length);
+    const expectedPromoted = Math.min(
+      stats.directPressureRegionCandidateChunks,
+      Math.max(1, Math.floor(sim.config.pressureDiffusionSourceBudget * 0.25))
+    );
+    expect(stats.directPressurePromotionBudget).toBe(expectedPromoted);
     expect(stats.directPressurePromotedChunks).toBeLessThanOrEqual(sim.config.pressureDiffusionSourceBudget);
     expect(stats.directPressurePromotedChunks).toBe(expectedPromoted);
     expect(stats.directPressureSuppressedChunks).toBe(10 - expectedPromoted);
+    expect(stats.diffusionSeedChunks).toBe(expectedPromoted);
+  });
+
+  it("aggregates direct pressure candidates by region before global diffusion promotion", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 960,
+      height: 640,
+      chunkSize: 32,
+      initialAgents: 0,
+      pressureDecay: 1,
+      pressureDiffusion: 0.2,
+      pressureDiffusionSourceBudget: 64,
+      pressureGrowth: 0,
+      resourceGrowth: 0,
+      seed: 20260627
+    });
+    sim.pressure.fill(0);
+    for (const chunk of sim.world.chunks.chunks) {
+      chunk.activity = "sleeping";
+      chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
+      chunk.fieldWriteMask = 0;
+      chunk.projectionDirtyMask = 0;
+      chunk.projectionDirty = false;
+      chunk.pressureDiffusionActive = false;
+      chunk.summary.pressure = 0;
+    }
+
+    for (const chunk of sim.world.chunks.chunks.slice(0, 120)) {
+      const idx = chunk.startY * sim.width + chunk.startX;
+      sim.pressure[idx] = 1;
+      chunk.summary.pressure = 1;
+      chunk.pressureWriteCells = 1;
+      chunk.pressureWriteImpulse = 1;
+      chunk.pressureWriteMaxDelta = 1;
+      chunk.pressureWriteLastTick = 1;
+    }
+
+    updateEnvironmentFields(sim.world, sim.config, 1, sim.random);
+
+    const stats = sim.world.chunks.schedulerStats;
+    expect(stats.directPressureCandidateChunks).toBe(120);
+    expect(stats.directPressureRegionCandidateChunks).toBeLessThan(120);
+    const expectedPromoted = Math.min(
+      stats.directPressureRegionCandidateChunks,
+      Math.max(1, Math.floor(sim.config.pressureDiffusionSourceBudget * 0.25))
+    );
+    expect(stats.directPressurePromotionBudget).toBe(expectedPromoted);
+    expect(stats.directPressurePromotedChunks).toBe(expectedPromoted);
+    expect(stats.directPressureSuppressedChunks).toBe(120 - expectedPromoted);
     expect(stats.diffusionSeedChunks).toBe(expectedPromoted);
   });
 
@@ -603,6 +709,48 @@ describe("typed simulation core", () => {
     expect(activeFrontierChunks.length).toBeGreaterThanOrEqual(stats.diffusionDeferredChunks);
   });
 
+  it("ages out stale retained pressure frontiers instead of keeping them as permanent sources", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 320,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 0,
+      pressureDecay: 1,
+      pressureDiffusion: 0.2,
+      pressureGrowth: 0,
+      resourceGrowth: 0,
+      seed: 20260626
+    });
+    sim.pressure.fill(0);
+    for (const chunk of sim.world.chunks.chunks) {
+      chunk.activity = "sleeping";
+      chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
+      chunk.fieldWriteMask = 0;
+      chunk.projectionDirtyMask = 0;
+      chunk.projectionDirty = false;
+      chunk.pressureDiffusionActive = false;
+      chunk.pressureFrontierLastActiveTick = 0;
+      chunk.pressureFrontierStaleTicks = 0;
+      chunk.summary.pressure = 0;
+    }
+
+    const chunk = sim.world.chunks.chunks[0];
+    chunk.pressureDiffusionActive = true;
+    chunk.pressureFrontierLastActiveTick = 1;
+    chunk.pressureFrontierStaleTicks = 2;
+
+    updateEnvironmentFields(sim.world, sim.config, 2, sim.random);
+
+    const stats = sim.world.chunks.schedulerStats;
+    expect(stats.diffusionFrontierChunks).toBe(1);
+    expect(stats.diffusionAgedOutFrontierChunks).toBe(1);
+    expect(stats.diffusionRetainedFrontierChunks).toBe(0);
+    expect(chunk.pressureDiffusionActive).toBe(false);
+    expect(chunk.pressureFrontierStaleTicks).toBe(0);
+  });
+
   it("marks lazily updated sleeping chunks dirty for projection refresh", () => {
     const sim = new Simulation({
       environmentMode: "flux",
@@ -619,7 +767,7 @@ describe("typed simulation core", () => {
       chunk.projectionDirty = false;
     }
 
-    sim.step(8);
+    sim.step(16);
     const updatedProjectionChunks = sim.world.chunks.chunks.filter((chunk) => chunk.projectionDirty);
 
     expect(sim.metrics().updatedChunks).toBeGreaterThan(0);

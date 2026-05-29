@@ -1,4 +1,4 @@
-import type { EnvironmentCell } from "../../core/primordia";
+import type { DynamicFields, EnvironmentCell, StaticTerrain, TerrainType } from "../../core/primordia";
 import type { BaseLayer, OverlayState } from "./mapViewTypes";
 import { BIOME_PALETTE, TERRAIN_PALETTE, mixRgb, shadeRgb, type Rgb } from "./palettes";
 
@@ -43,6 +43,25 @@ export function paintMapCell(
   data[offset + 3] = 255;
 }
 
+export function paintTerrainMapCell(
+  data: Uint8ClampedArray,
+  offset: number,
+  terrain: StaticTerrain,
+  fields: DynamicFields,
+  index: number
+): void {
+  const color = terrainColorFromValues(
+    terrain.elevation[index],
+    terrain.moistureBase[index],
+    fields.moistureDelta[index],
+    terrain.terrainType[index]
+  );
+  data[offset] = color[0];
+  data[offset + 1] = color[1];
+  data[offset + 2] = color[2];
+  data[offset + 3] = 255;
+}
+
 export function colorForCell(
   cell: EnvironmentCell,
   baseLayer: BaseLayer,
@@ -79,15 +98,24 @@ export function colorForCell(
 }
 
 export function terrainColor(cell: EnvironmentCell, config = TERRAIN_RENDER_CONFIG): [number, number, number] {
-  const elevation = cell.elevation;
-  const moisture = Math.min(1, cell.moistureBase + cell.moistureDelta * 0.22);
+  return terrainColorFromValues(cell.elevation, cell.moistureBase, cell.moistureDelta, cell.terrainType, config);
+}
+
+export function terrainColorFromValues(
+  elevation: number,
+  moistureBase: number,
+  moistureDelta: number,
+  terrainType: TerrainType,
+  config = TERRAIN_RENDER_CONFIG
+): [number, number, number] {
+  const moisture = Math.min(1, moistureBase + moistureDelta * 0.22);
   let color: Rgb;
 
-  if (cell.terrainType === "ocean") {
+  if (terrainType === "ocean") {
     color = mixRgb(TERRAIN_PALETTE.oceanDeep, TERRAIN_PALETTE.oceanShallow, Math.max(0, elevation / config.coastElevation));
   } else {
     const upland = mixRgb(TERRAIN_PALETTE.lowland, TERRAIN_PALETTE.highland, Math.max(0, (elevation - 0.28) / 0.5));
-    color = elevation >= config.snowLine || cell.terrainType === "snow" ? mixRgb(upland, TERRAIN_PALETTE.snow, 0.74) : upland;
+    color = elevation >= config.snowLine || terrainType === "snow" ? mixRgb(upland, TERRAIN_PALETTE.snow, 0.74) : upland;
     color = mixRgb(color, [42, 116, 121], moisture * config.moistureTintStrength);
   }
 

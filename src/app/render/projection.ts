@@ -1,5 +1,5 @@
 import type { BaseLayer, OverlayState } from "./mapViewTypes";
-import { paintMapCell } from "./mapViews";
+import { paintMapCell, paintTerrainMapCell } from "./mapViews";
 import { CHUNK_DIRTY, consumeChunkProjectionDirty, retireHiddenProjectionDirty } from "../../core/primordia";
 import type { ChunkRecord, EnvironmentCell, Simulation } from "../../core/primordia";
 import { chunkAffectsProjection, projectionDependencyMask, projectionOverlayKey } from "./renderDependencies";
@@ -60,6 +60,7 @@ export function createProjection(
   const selection = selectProjectionChunks(sim.world.chunks.chunks, Boolean(canReuse), visibleDependencyMask);
   const selectChunksMs = profile ? profile.now() - selectStart : 0;
   const chunks = selection.chunks;
+  const terrainFastPath = shouldUseTerrainProjectionFastPath(baseLayer, overlays);
   let projectedCells = 0;
   const dirtyStats = profile ? countProjectionDirtyStats(sim.world.chunks.chunks, visibleDependencyMask) : null;
   let consumedDirtyChunks = 0;
@@ -72,8 +73,12 @@ export function createProjection(
     for (let y = chunk.startY; y < chunk.endY; y += 1) {
       for (let x = chunk.startX; x < chunk.endX; x += 1) {
         const index = y * sim.width + x;
-        const cell = sim.environmentAt(index);
-        paintMapCell(data, index * 4, cell, baseLayer, overlays, sim.config.resourceCap);
+        if (terrainFastPath) {
+          paintTerrainMapCell(data, index * 4, sim.world.terrain, sim.world.fields, index);
+        } else {
+          const cell = sim.environmentAt(index);
+          paintMapCell(data, index * 4, cell, baseLayer, overlays, sim.config.resourceCap);
+        }
       }
     }
     if (consumeChunkProjectionDirty(sim.world.chunks, chunk.id, visibleDependencyMask)) {
@@ -112,6 +117,10 @@ export function createProjection(
     resourceCap: sim.config.resourceCap,
     image
   };
+}
+
+export function shouldUseTerrainProjectionFastPath(baseLayer: BaseLayer, overlays: OverlayState): boolean {
+  return baseLayer === "terrain" && !overlays.resources && !overlays.pressure && !overlays.lineages;
 }
 
 export function selectProjectionChunks(

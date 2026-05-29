@@ -208,6 +208,42 @@ After the Phase 2.3.26 direct pressure-write split:
 - A 10s browser terrain-only deep smoke profile at `http://127.0.0.1:5176/?profile=terrain&profileDetail=deep&profileSeconds=10` confirmed the new counters are live: `directCandidateChunks p95 ~42`, `directPromotedChunks p95 0`, `directSuppressedChunks p95 ~42`, `directWriteImpulse p95 ~3.24`, `backgroundSourceChunks p95 0`. It also showed `selectedChunks p95 128`, `frontierChunks p95 ~535`, and `retainedFrontierChunks p95 ~535`, so the remaining diffusion breadth has shifted from direct writes to retained-frontier persistence.
 - Browser pressure-visible profile is still required before closing #71/#75. If the 30s terrain profile repeats the 10s smoke pattern, the next structural task should narrow or age retained frontiers rather than tune direct-write thresholds.
 
+After the Phase 2.3.27 retained-frontier aging first pass:
+
+- Pressure frontier chunks now carry `pressureFrontierLastActiveTick` and `pressureFrontierStaleTicks` in addition to `pressureDiffusionActive`.
+- Explicit pressure dirtiness and meaningful diffusion boundary deltas refresh frontier age; chunks that do not produce meaningful diffusion change become stale and age out instead of remaining permanent source candidates.
+- Deferred frontier chunks are no longer kept forever merely because they exceeded the hard chunk budget. They stay queued only while their frontier age is still valid; stale deferred chunks are cleared.
+- Direct pressure candidates are now region-aggregated before global promotion, and direct promotion uses a separate small share of the source budget. Direct/background sources diffuse locally first; only retained frontiers expand to neighbors in the same tick.
+- New counters expose this lifecycle: `core.diffusion.staleFrontierChunks`, `core.diffusion.agedOutFrontierChunks`, `core.diffusion.directRegionCandidateChunks`, `core.diffusion.directPromotionBudget`, plus matching scheduler fields.
+- `npm run check` passed with `93` tests; `npm run build` passed.
+- `npm run bench:core` completed with initialize `~3119.57ms`, cold `step(16)` `~3345.92ms`, hot `step(16)` `~429.10ms`, hot snapshot stride 48 `~2.8447ms`.
+- A 10s browser terrain-only deep smoke profile at `http://127.0.0.1:5174/?profile=terrain&profileDetail=deep&profileSeconds=10` showed the intended source narrowing: `selectedChunks p95 ~50`, `sourceChunks p95 ~50`, `neighborChunks p95 0`, `directCandidateChunks p95 ~100`, `directRegionCandidateChunks p95 ~27`, `directPromotionBudget p95 16`, `directPromotedChunks p95 16`, `directSuppressedChunks p95 ~84`, `diffusePressure p95 ~9.5ms`, and `sim.step p50/p95 ~10.8ms/28.5ms`.
+- That short profile still failed the assessment because cold/initial projection polluted `render.total p95 ~349ms` and `runtime.backlogTicks p95 7`. Browser 30s terrain-only and pressure-visible deep profiles are still required before closing #71/#75.
+- A later 30s terrain-only deep profile from `C:/Users/admin/Desktop/profile.txt` failed the assessment, but confirmed the pressure source narrowing is effective rather than regressed: `sim.step p50/p95 23.7ms/44.5ms`, `runtime.backlogTicks p95 ~1.0`, `core.world.diffusePressure p95 ~6.5ms`, `core.diffusion.selectedChunks p95 86`, `core.diffusion.computedCells p95 88064`, `directPromotedChunks p95 16`, and `directSuppressedChunks p95 185`.
+- The remaining 30s terrain-only bottleneck is now warm/sleeping field catch-up plus terrain projection paint: `core.world.environmentChunks p95 ~29.2ms`, `core.world.catchUpUpdatedChunks p95 86`, `core.world.catchUpUpdatedCells p95 88064`, `projection.projectedChunks p95 25`, and `projection.paintCells p95 ~18ms`.
+- Resources/pressure/lineages overlay cost is a real future visual-layer architecture problem, because those layers are baked into projection `ImageData` while agents/processes are separate canvas overlays. Do not pivot to that yet; keep the current Phase 2.3.x sequence on warm/sleeping catch-up cadence first.
+
+After the Phase 2.3.28 warm/sleeping catch-up cadence first pass:
+
+- Large worlds now use an effective field catch-up cadence wider than the config baseline: default `warmChunkInterval 4` becomes effective `8`, and `sleepingChunkInterval 16` becomes effective `32`. Small worlds keep the configured cadence.
+- Catch-up still applies elapsed ecological time deterministically; this pass reduces how many chunks are scanned per tick rather than skipping field evolution.
+- Scheduler/profile counters now expose `core.scheduler.effectiveWarmChunkInterval` and `core.scheduler.effectiveSleepingChunkInterval`.
+- `npm run check` passed with `95` tests; `npm run build` passed.
+- `npm run bench:core` completed with initialize `~3457.92ms`, cold `step(16)` `~3418.64ms`, hot `step(16)` `~372.41ms`, hot snapshot stride 48 `~3.2740ms`.
+- A 10s browser terrain-only deep smoke profile at `http://127.0.0.1:5174/?profile=terrain&profileDetail=deep&profileSeconds=10` passed: `sim.step p50/p95 ~13.1ms/28.8ms`, `render.total p95 ~1.3ms`, `runtime.backlogTicks p95 ~0.93`, `core.world.environmentChunks p95 ~15.1ms`, `catchUpUpdatedCells p95 44032`, effective cadence `8/32`.
+- A 30s browser terrain-only deep profile still failed only on render p95: `sim.step p50/p95 ~17.2ms/31.1ms`, `runtime.backlogTicks p95 ~1.0`, `render.total p95 ~14.8ms`, `core.world.environmentChunks p95 ~16.4ms`, `core.tick.updateWorld p95 ~21.0ms`, `catchUpUpdatedChunks p95 46`, `catchUpUpdatedCells p95 47104`, `diffusePressure p95 ~5.5ms`, `projection.projectedChunks p95 25`, `projection.paintCells p95 ~14ms`.
+- The immediate next structural target is terrain projection paint fast-path. Core tick is now under the 33ms p95 target in the 30s terrain-only profile; acceptance is blocked by render projection cost.
+
+After the Phase 2.3.29 terrain projection paint fast-path:
+
+- Terrain base projection with resources/pressure/lineages projection overlays off now uses a typed-array fast path. It writes terrain pixels directly from `StaticTerrain` and `DynamicFields.moistureDelta` instead of constructing an `EnvironmentCell` for every projected cell.
+- Resource, pressure, biome, and projection-baked overlay modes keep the generic `paintMapCell(environmentAt(...))` path for correctness.
+- `terrainColor` now delegates to `terrainColorFromValues`, and tests verify the fast path matches the generic terrain color output.
+- `npm run check` passed with `97` tests; `npm run build` passed.
+- `npm run bench:core` completed but was noisy and worse (`hot step(16) ~574.98ms`); this change is app-render-only, so use browser profile as the relevant signal.
+- A 30s browser terrain-only deep profile at `http://127.0.0.1:5174/?profile=terrain&profileDetail=deep&profileSeconds=30` passed: `sim.step p50/p95 ~19.6ms/29.0ms`, `runtime.backlogTicks p95 ~1.0`, `render.total p95 ~2.5ms`, `render.projection.total p95 ~1.7ms`, `projection.paintCells p95 ~1.7ms`, `projection.projectedChunks p95 25`, `projection.projectedCells p95 25600`, effective cadence `8/32`.
+- The terrain-only acceptance profile is now green. The next validation gap is pressure-visible/profile overlays, especially resources/pressure/lineages because they still use projection-baked visual layers.
+
 ## Historical Profile Superseded By Current Baseline
 
 Scenario:
@@ -285,12 +321,31 @@ New profile counters for this pass:
 - `core.diffusion.retainedFrontierChunks`
 - `core.diffusion.skippedBackgroundChunks`
 
+Phase 2.3.27 adds retained-frontier lifecycle counters:
+
+- `core.diffusion.staleFrontierChunks`
+- `core.diffusion.agedOutFrontierChunks`
+- `core.diffusion.directRegionCandidateChunks`
+- `core.diffusion.directPromotionBudget`
+- scheduler summary fields `diffusionStaleFrontierChunks` and `diffusionAgedOutFrontierChunks`
+
 Remaining #71 findings after the first browser profile:
 
 - Frontier source chunks are still broad because direct pressure writes cover hundreds of chunks at 900 agents.
 - `selectedChunks p95` dropped only slightly from `128` to about `124`, but `core.world.diffusePressure p95` improved from about `13.5ms` to about `9.5ms` because neighbor expansion is now gradient-aware.
 - Do not hide this by simply lowering `pressureDiffusionSourceBudget`; the next structural decision should separate local direct pressure writes from global pressure diffusion sources, or aggregate direct write frontier by region/pressure intensity before source selection.
 - Terrain projection remains a separate render-side issue: terrain-only profiles still show `projection.projectedChunks p95 ~25` with `render.total p95 ~15ms`.
+
+Follow-up after Phase 2.3.27:
+
+- Run a pressure-visible deep profile before closing #71/#75.
+- If `selectedChunks` rises back toward `128`, inspect whether retained frontiers are being regenerated by pressure field dirty writes or by neighbor boundary gradients.
+
+Follow-up after Phase 2.3.28:
+
+- Run pressure-visible and overlay-visible deep profiles before closing #71/#75/#76.
+- Keep resources/pressure/lineages overlay architecture as the next visual-layer design risk after the terrain base projection path is green.
+- Do not widen pressure diffusion or tighten catch-up cadence again unless a pressure-visible profile shows visible discontinuity or ecology drift.
 
 ## GitHub Project Note
 

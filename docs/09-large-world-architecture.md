@@ -256,6 +256,36 @@ Acceptance target:
 - a high-pressure pulse near a chunk border must affect the neighboring chunk even if that neighbor was sleeping
 - no full `960 x 640` temporary allocation should be required for every diffusion pass
 
+### Phase 2.3.27 Retained Frontier Aging
+
+The first frontier implementation proved that source selection must have lifecycle semantics, not just a boolean active flag. A retained frontier now records when it last produced meaningful pressure activity and how many consecutive stale diffusion passes it has survived.
+
+Rules:
+
+- direct pressure writes remain local candidates first; they do not refresh retained frontier age by themselves
+- direct pressure candidates are grouped by region before entering global source selection
+- direct pressure promotion uses its own small budget slice instead of consuming the full diffusion source budget
+- direct/background source chunks diffuse locally first; only retained frontier chunks expand to neighbors in the same tick
+- explicit pressure dirtiness and meaningful boundary-gradient diffusion reset the retained frontier stale count
+- unchanged or below-threshold frontier chunks increment stale count
+- deferred chunks caused by the hard diffusion budget are only kept while their frontier age is still valid
+- stale frontier chunks age out deterministically instead of occupying future source selection forever
+
+Profiler counters:
+
+- `core.diffusion.staleFrontierChunks`
+- `core.diffusion.agedOutFrontierChunks`
+- `core.diffusion.directRegionCandidateChunks`
+- `core.diffusion.directPromotionBudget`
+
+Acceptance target:
+
+- retained frontier chunks should not remain pinned near the full active frontier width when pressure gradients have settled
+- selected diffusion chunks should fall because stale frontiers leave the source set, not because the hard source/chunk budget was lowered
+- pressure-visible profiles must not show obvious diffusion discontinuities after stale frontier aging
+
+The first 30s terrain-only profile after this pass shows the source-width side is moving in the right direction: `selectedChunks p95` fell to `86`, `computedCells p95` to `88064`, and `diffusePressure p95` to about `6.5ms`. The change is not sufficient for acceptance because warm/sleeping catch-up still updates about `88064` cells at p95 and `sim.step p95` remains about `44.5ms`.
+
 ## Region And Habitat Graph
 
 The large world needs an intermediate scale between individual cells and the full map.
@@ -317,7 +347,7 @@ The resolver then applies intentions in stable order:
 
 Multi-rate loops:
 
-- cell field decay/recovery: per active chunk tick, lazy for sleeping chunks
+- cell field decay/recovery: per active chunk tick, lazy for warm/sleeping chunks
 - pressure diffusion: configurable cadence, default every tick for active chunks until benchmark says otherwise
 - agent intention: every tick for live agents
 - expensive sense refresh: may run every `N` ticks if the agent is stationary and local dirty version did not change
@@ -327,6 +357,10 @@ Multi-rate loops:
 - snapshot export: user-initiated, with full deterministic catch-up before serialization
 
 Any reduced-rate path must be visible in config and tests. It cannot be silently coupled to hardware speed.
+
+Phase 2.3.28 makes that cadence explicit for large worlds. The default configured `warmChunkInterval 4` and `sleepingChunkInterval 16` become effective intervals `8` and `32` only when the world is above the large-world threshold; smaller deterministic tests and small worlds keep the configured intervals. Catch-up chunks still apply elapsed field time, so this is a scheduling width change rather than a rule that skips ecology.
+
+The 30s terrain-only profile after this pass shows `catchUpUpdatedCells p95` falling from `88064` to `47104`, `core.world.environmentChunks p95` from about `29.2ms` to `16.4ms`, and `sim.step p95` from `44.5ms` to `31.1ms`. The remaining profile failure is render-side: `projection.paintCells p95` is still about `14ms` while only about `25` chunks are projected.
 
 ## Projection And Render LOD
 
@@ -353,9 +387,14 @@ Render rules:
 - static terrain projection may be cached until seed/config/world size changes
 - dynamic field projection updates only dirty chunks
 - agent projection updates chunks with agent dirty flags
+- terrain base projection can use a typed-array paint fast-path when resources, pressure, and lineages are not projection-baked into the image
 - pressure/resource overlays can use lower LOD outside the viewport or when frame budget is tight
 - inspection tools must be able to request exact cell values after lazy catch-up
 - render LOD must not change simulation state or scheduler decisions
+
+Current visual-layer note: agents and processes are already drawn as separate canvas overlays, while resources, pressure, and lineages are still baked into the projection `ImageData`. This means hidden dirty debt for those visual modes can become projection paint debt when the overlays are enabled. Treat this as a future visual-layer architecture task after the warm/sleeping catch-up cadence work, not as part of the current pressure-frontier source narrowing.
+
+Phase 2.3.29 adds the first render fast-path under that boundary. Terrain-only projection now paints from `StaticTerrain` and `DynamicFields.moistureDelta` directly, avoiding per-cell `EnvironmentCell` allocation in the common terrain base view. The generic projection path remains the contract for resource, pressure, biome, and projection-baked overlay modes. The 30s terrain-only browser profile after this pass reduced `projection.paintCells p95` from about `14ms` to about `1.7ms` and `render.total p95` from about `14.8ms` to about `2.5ms`.
 
 Canvas 2D evaluation:
 

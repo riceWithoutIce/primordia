@@ -212,6 +212,8 @@ export interface ChunkRecord extends ChunkBounds {
   summaryDirty: boolean;
   projectionDirty: boolean;
   pressureDiffusionActive: boolean;
+  pressureFrontierLastActiveTick: number;
+  pressureFrontierStaleTicks: number;
   pressureWriteCells: number;
   pressureWriteImpulse: number;
   pressureWriteLastTick: number;
@@ -236,9 +238,13 @@ export interface ChunkSchedulerStats {
   directPressureWriteChunks: number;
   directMixedFieldWriteChunks: number;
   directPressureCandidateChunks: number;
+  directPressureRegionCandidateChunks: number;
+  directPressurePromotionBudget: number;
   directPressurePromotedChunks: number;
   directPressureSuppressedChunks: number;
   directPressureWriteImpulse: number;
+  effectiveWarmChunkInterval: number;
+  effectiveSleepingChunkInterval: number;
   diffusionBackgroundSourceChunks: number;
   warmFieldUpdateChunks: number;
   sleepingFieldUpdateChunks: number;
@@ -257,6 +263,8 @@ export interface ChunkSchedulerStats {
   diffusionSelectedChunks: number;
   diffusionEffectiveChunks: number;
   diffusionFrontierChunks: number;
+  diffusionStaleFrontierChunks: number;
+  diffusionAgedOutFrontierChunks: number;
   diffusionRetainedFrontierChunks: number;
   diffusionDeferredChunks: number;
   diffusionNearZeroCandidateChunks: number;
