@@ -15,6 +15,7 @@ Update 2026-05-28:
 - Phase 2.3.23 first pass is implemented locally: direct agent field writes now use a separate `fieldWriteMask` path for projection, summary, and pressure-frontier observability instead of putting the chunk into the immediate full-field update lane. This is the first practical trace/resource/pressure sub-lane split.
 - Phase 2.3.24 starts the dirty-domain split: chunks now carry `fieldDirtyMask` for environment field-lane work, `fieldWriteMask` for direct agent/organ writes, `summaryDirty` for aggregate refresh, `pressureDiffusionActive` for pressure frontier continuation, and `projectionDirtyMask` for render-cache invalidation only. Terrain projection consumes visible moisture debt and retires hidden resource/pressure render debt without clearing core field-write, summary, or diffusion-frontier state.
 - Phase 2.3.25 first pass starts pressure-frontier diffusion: large-world diffusion source selection now prioritizes `pressureDiffusionActive` / pressure field dirty chunks, skips empty background chunks, expands to neighbor chunks only when a boundary pressure gradient exists, and keeps changed/deferred chunks in the frontier only while pressure remains meaningful.
+- Phase 2.3.26 starts the direct pressure-write frontier split: agent/organ pressure writes now remain local field writes plus per-chunk pressure-write candidates first; only retained frontiers, high-scoring direct candidates, or deterministic background sources enter global pressure diffusion source selection.
 
 ## Current State
 
@@ -197,6 +198,15 @@ Validation in this pass so far:
   - a stricter background-continuation run showed `frontierChunks p95 ~365`, `deferredChunks p95 ~301`, `selectedChunks p95 124`, and `sim.step p50/p95 ~27.5ms/37.8ms`
   - interpretation: pressure diffusion p95 improved versus the Phase 2.3.24 baseline (`~13.5ms`), but direct pressure writes still create a very wide active frontier, so #71 is improved but not closed
 - Pressure-visible profile is still required before closing #71/#75.
+
+After the Phase 2.3.26 direct pressure-write split:
+
+- Agent/organ direct pressure writes no longer set `pressureDiffusionActive` immediately. They update local pressure, summary/projection dirtiness, and per-chunk candidate fields: `pressureWriteCells`, `pressureWriteImpulse`, `pressureWriteMaxDelta`, and `pressureWriteLastTick`.
+- Large-world pressure source selection now prioritizes retained explicit frontiers, then deterministic high-scoring direct pressure-write candidates, and only falls back to deterministic background pressure chunks when no frontier/candidate source exists.
+- New profile/scheduler counters expose the split: `core.diffusion.directCandidateChunks`, `core.diffusion.directPromotedChunks`, `core.diffusion.directSuppressedChunks`, `core.diffusion.directWriteImpulse`, `core.diffusion.backgroundSourceChunks`, plus matching `core.scheduler.directPressure*` counters.
+- `npm run check` passed with `91` tests; `npm run build` passed; `npm run bench:core` passed with initialize `~3375.96ms`, cold `step(16)` `~3845.88ms`, hot `step(16)` `~653.60ms`, hot snapshot stride 48 `~3.5813ms`.
+- A 10s browser terrain-only deep smoke profile at `http://127.0.0.1:5176/?profile=terrain&profileDetail=deep&profileSeconds=10` confirmed the new counters are live: `directCandidateChunks p95 ~42`, `directPromotedChunks p95 0`, `directSuppressedChunks p95 ~42`, `directWriteImpulse p95 ~3.24`, `backgroundSourceChunks p95 0`. It also showed `selectedChunks p95 128`, `frontierChunks p95 ~535`, and `retainedFrontierChunks p95 ~535`, so the remaining diffusion breadth has shifted from direct writes to retained-frontier persistence.
+- Browser pressure-visible profile is still required before closing #71/#75. If the 30s terrain profile repeats the 10s smoke pattern, the next structural task should narrow or age retained frontiers rather than tune direct-write thresholds.
 
 ## Historical Profile Superseded By Current Baseline
 

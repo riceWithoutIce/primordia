@@ -22,7 +22,8 @@ import {
   refreshDirtyRegionSummaries,
   resetChunkAgentCounts,
   touchCell,
-  touchCellFieldWrite
+  touchCellFieldWrite,
+  touchCellPressureFieldWrite
 } from "../world/chunks";
 import {
   barrierFor,
@@ -437,8 +438,15 @@ export class Simulation {
     const traceAmount = clamp((0.35 + outcome.cost.trace + radius * 0.12) * organTracePotency(agent.genome), 0, 2.8);
     const pressureAmount = clamp(0.05 + outcome.cost.pressure + radius * 0.03, 0, 0.4);
     this.traces[idx] = clamp(this.traces[idx] + traceAmount, 0, 12);
+    const pressureBefore = this.pressure[idx];
     this.pressure[idx] = clamp(this.pressure[idx] + pressureAmount, 0, 4);
-    touchCellFieldWrite(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure);
+    touchCellPressureFieldWrite(
+      this.world.chunks,
+      idx,
+      this.tickCount,
+      CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure,
+      this.pressure[idx] - pressureBefore
+    );
   }
 
   updateEnvironment(): void {
@@ -541,14 +549,16 @@ export class Simulation {
     this.resources[idx] -= harvested;
     agent.energy += harvested;
     const pressureDelta = harvestPressure(agent.genome, harvested);
+    const pressureBefore = this.pressure[idx];
     if (pressureDelta > 0) {
       this.pressure[idx] = clamp(this.pressure[idx] + pressureDelta, 0, 4);
     }
-    touchCellFieldWrite(
+    touchCellPressureFieldWrite(
       this.world.chunks,
       idx,
       this.tickCount,
-      pressureDelta > 0 ? CHUNK_DIRTY.resource | CHUNK_DIRTY.pressure : CHUNK_DIRTY.resource
+      pressureDelta > 0 ? CHUNK_DIRTY.resource | CHUNK_DIRTY.pressure : CHUNK_DIRTY.resource,
+      this.pressure[idx] - pressureBefore
     );
     return harvested;
   }
@@ -592,8 +602,15 @@ export class Simulation {
 
     this.resources[idx] = clamp(this.resources[idx] + resourceResidue, 0, this.config.resourceCap);
     this.traces[idx] = clamp(this.traces[idx] + traceResidue, 0, 12);
+    const pressureBefore = this.pressure[idx];
     this.pressure[idx] = clamp(this.pressure[idx] + pressureResidue, 0, 4);
-    touchCellFieldWrite(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure);
+    touchCellPressureFieldWrite(
+      this.world.chunks,
+      idx,
+      this.tickCount,
+      CHUNK_DIRTY.resource | CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure,
+      this.pressure[idx] - pressureBefore
+    );
   }
 
   chooseMove(agent: Agent): MoveVector {
@@ -672,8 +689,15 @@ export class Simulation {
     const speciesId = speciesForGenome(childGenome, biome, parent.lineageId, parent.generation + 1);
 
     this.traces[idx] = clamp(this.traces[idx] + reproductionWaste * 0.02, 0, 12);
+    const pressureBefore = this.pressure[idx];
     this.pressure[idx] = clamp(this.pressure[idx] + reproductionWaste * 0.006, 0, 4);
-    touchCellFieldWrite(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure);
+    touchCellPressureFieldWrite(
+      this.world.chunks,
+      idx,
+      this.tickCount,
+      CHUNK_DIRTY.trace | CHUNK_DIRTY.pressure,
+      this.pressure[idx] - pressureBefore
+    );
     touchCell(this.world.chunks, idx, this.tickCount, CHUNK_DIRTY.agents);
 
     parent.lastAction = "divide";

@@ -81,7 +81,12 @@ describe("terrain baseline profiler", () => {
     sink?.recordDuration("core.tick.updateWorld", 7);
     sink?.recordValue("core.dirty.moistureAfterEnvironment", 42);
     sink?.recordValue("core.diffusion.seedChunks", 3);
+    sink?.recordValue("core.diffusion.backgroundSourceChunks", 1);
     sink?.recordValue("core.diffusion.deferredChunks", 1);
+    sink?.recordValue("core.diffusion.directCandidateChunks", 5);
+    sink?.recordValue("core.diffusion.directPromotedChunks", 2);
+    sink?.recordValue("core.diffusion.directSuppressedChunks", 3);
+    sink?.recordValue("core.diffusion.directWriteImpulse", 0.75);
     sink?.recordValue("core.diffusion.effectiveChunks", 2);
     sink?.recordValue("core.diffusion.frontierChunks", 2);
     sink?.recordValue("core.diffusion.nearZeroCandidateChunks", 4);
@@ -89,6 +94,7 @@ describe("terrain baseline profiler", () => {
     sink?.recordValue("core.diffusion.retainedFrontierChunks", 3);
     sink?.recordValue("core.diffusion.skippedBackgroundChunks", 6);
     sink?.recordValue("core.scheduler.activeEnvironmentChunks", 5);
+    sink?.recordValue("core.scheduler.directPressurePromotedChunks", 2);
     profiler.recordValue("runtime.backlogTicks", 1.5);
     profiler.recordValue("runtime.mode", 2);
 
@@ -96,7 +102,12 @@ describe("terrain baseline profiler", () => {
     expect(report.durations["core.tick.updateWorld"]?.p95).toBe(7);
     expect(report.values["core.dirty.moistureAfterEnvironment"]?.p95).toBe(42);
     expect(report.values["core.diffusion.seedChunks"]?.p95).toBe(3);
+    expect(report.values["core.diffusion.backgroundSourceChunks"]?.p95).toBe(1);
     expect(report.values["core.diffusion.deferredChunks"]?.p95).toBe(1);
+    expect(report.values["core.diffusion.directCandidateChunks"]?.p95).toBe(5);
+    expect(report.values["core.diffusion.directPromotedChunks"]?.p95).toBe(2);
+    expect(report.values["core.diffusion.directSuppressedChunks"]?.p95).toBe(3);
+    expect(report.values["core.diffusion.directWriteImpulse"]?.p95).toBe(0.75);
     expect(report.values["core.diffusion.effectiveChunks"]?.p95).toBe(2);
     expect(report.values["core.diffusion.frontierChunks"]?.p95).toBe(2);
     expect(report.values["core.diffusion.nearZeroCandidateChunks"]?.p95).toBe(4);
@@ -104,6 +115,7 @@ describe("terrain baseline profiler", () => {
     expect(report.values["core.diffusion.retainedFrontierChunks"]?.p95).toBe(3);
     expect(report.values["core.diffusion.skippedBackgroundChunks"]?.p95).toBe(6);
     expect(report.values["core.scheduler.activeEnvironmentChunks"]?.p95).toBe(5);
+    expect(report.values["core.scheduler.directPressurePromotedChunks"]?.p95).toBe(2);
     expect(report.values["runtime.backlogTicks"]?.p95).toBe(1.5);
     expect(report.values["runtime.mode"]?.p95).toBe(2);
   });

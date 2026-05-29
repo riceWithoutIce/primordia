@@ -318,7 +318,7 @@ describe("typed simulation core", () => {
     expect(chunk.fieldWriteMask).toBe(0);
   });
 
-  it("uses pressure-touched chunks as the large-world diffusion source", () => {
+  it("uses explicit pressure frontier chunks as the large-world diffusion source", () => {
     const sim = new Simulation({
       environmentMode: "flux",
       width: 320,
@@ -357,6 +357,144 @@ describe("typed simulation core", () => {
     expect(stats.diffusionSelectedChunks).toBeLessThan(sim.world.chunks.chunks.length);
     expect(stats.summaryRefreshRegions).toBeLessThan(sim.world.regions.regions.length);
     expect(sim.pressure[neighbor]).toBeGreaterThan(0);
+  });
+
+  it("keeps low-intensity direct pressure writes local instead of promoting them to diffusion sources", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 320,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 0,
+      pressureDecay: 1,
+      pressureDiffusion: 0.2,
+      pressureGrowth: 0,
+      resourceGrowth: 0,
+      seed: 20260623
+    });
+    sim.pressure.fill(0);
+    for (const chunk of sim.world.chunks.chunks) {
+      chunk.activity = "sleeping";
+      chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
+      chunk.fieldWriteMask = 0;
+      chunk.projectionDirtyMask = 0;
+      chunk.projectionDirty = false;
+      chunk.pressureDiffusionActive = false;
+      chunk.summary.pressure = 0;
+    }
+
+    const agent = sim.spawnAgent(5, 5, testGenome({ harvestRate: 2 }), 20);
+    const idx = sim.index(agent.x, agent.y);
+    sim.resources[idx] = 1;
+
+    sim.harvestAgent(agent);
+    const chunk = sim.world.chunks.chunks[sim.world.chunks.cellToChunk[idx]];
+    expect(chunk.pressureWriteImpulse).toBeGreaterThan(0);
+    expect(chunk.pressureDiffusionActive).toBe(false);
+
+    updateEnvironmentFields(sim.world, sim.config, 1, sim.random);
+
+    const stats = sim.world.chunks.schedulerStats;
+    expect(stats.directPressureCandidateChunks).toBe(1);
+    expect(stats.directPressurePromotedChunks).toBe(0);
+    expect(stats.directPressureSuppressedChunks).toBe(1);
+    expect(stats.diffusionSeedChunks).toBe(0);
+    expect(stats.diffusionSelectedChunks).toBe(0);
+    expect(chunk.pressureWriteImpulse).toBe(0);
+  });
+
+  it("promotes high-intensity direct pressure writes before background pressure sources", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 320,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 0,
+      pressureDecay: 1,
+      pressureDiffusion: 0.2,
+      pressureGrowth: 0,
+      resourceGrowth: 0,
+      seed: 20260624
+    });
+    sim.pressure.fill(0);
+    for (const chunk of sim.world.chunks.chunks) {
+      chunk.activity = "sleeping";
+      chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
+      chunk.fieldWriteMask = 0;
+      chunk.projectionDirtyMask = 0;
+      chunk.projectionDirty = false;
+      chunk.pressureDiffusionActive = false;
+      chunk.summary.pressure = 0;
+    }
+
+    const agent = sim.spawnAgent(10, 10, testGenome(), -1);
+    const idx = sim.index(agent.x, agent.y);
+    sim.pressure[idx] = 0;
+
+    sim.handleAgentDeath(agent, "pressure");
+
+    const chunk = sim.world.chunks.chunks[sim.world.chunks.cellToChunk[idx]];
+    expect(chunk.pressureWriteMaxDelta).toBeGreaterThanOrEqual(0.45);
+    expect(chunk.pressureDiffusionActive).toBe(false);
+
+    updateEnvironmentFields(sim.world, sim.config, 1, sim.random);
+
+    const stats = sim.world.chunks.schedulerStats;
+    expect(stats.directPressureCandidateChunks).toBe(1);
+    expect(stats.directPressurePromotedChunks).toBe(1);
+    expect(stats.directPressureSuppressedChunks).toBe(0);
+    expect(stats.diffusionSeedChunks).toBe(1);
+    expect(stats.diffusionBackgroundSourceChunks).toBe(0);
+    expect(stats.diffusionSelectedChunks).toBeGreaterThanOrEqual(1);
+  });
+
+  it("bounds direct pressure candidate promotion by the source budget", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 320,
+      height: 224,
+      chunkSize: 32,
+      initialAgents: 0,
+      pressureDecay: 1,
+      pressureDiffusion: 0.2,
+      pressureDiffusionSourceBudget: 4,
+      pressureGrowth: 0,
+      resourceGrowth: 0,
+      seed: 20260625
+    });
+    sim.pressure.fill(0);
+    for (const chunk of sim.world.chunks.chunks) {
+      chunk.activity = "sleeping";
+      chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
+      chunk.fieldWriteMask = 0;
+      chunk.projectionDirtyMask = 0;
+      chunk.projectionDirty = false;
+      chunk.pressureDiffusionActive = false;
+      chunk.summary.pressure = 0;
+    }
+
+    for (const chunk of sim.world.chunks.chunks.slice(0, 10)) {
+      const idx = chunk.startY * sim.width + chunk.startX;
+      sim.pressure[idx] = 0.8;
+      chunk.summary.pressure = 0.8;
+      chunk.pressureWriteCells = 1;
+      chunk.pressureWriteImpulse = 0.8;
+      chunk.pressureWriteMaxDelta = 0.8;
+      chunk.pressureWriteLastTick = 1;
+    }
+
+    updateEnvironmentFields(sim.world, sim.config, 1, sim.random);
+
+    const stats = sim.world.chunks.schedulerStats;
+    expect(stats.directPressureCandidateChunks).toBe(10);
+    const expectedPromoted = sim.config.pressureDiffusionSourceBudget;
+    expect(stats.directPressurePromotedChunks).toBeLessThanOrEqual(sim.config.pressureDiffusionSourceBudget);
+    expect(stats.directPressurePromotedChunks).toBe(expectedPromoted);
+    expect(stats.directPressureSuppressedChunks).toBe(10 - expectedPromoted);
+    expect(stats.diffusionSeedChunks).toBe(expectedPromoted);
   });
 
   it("keeps large-world background pressure diffusion bounded by a deterministic slice", () => {
@@ -1495,7 +1633,8 @@ describe("typed simulation core", () => {
     expect(harvestChunk.dirtyMask & CHUNK_DIRTY.pressure).toBe(0);
     expect(harvestChunk.fieldDirtyMask & CHUNK_DIRTY.pressure).toBe(0);
     expect(harvestChunk.fieldWriteMask & CHUNK_DIRTY.pressure).toBe(CHUNK_DIRTY.pressure);
-    expect(harvestChunk.pressureDiffusionActive).toBe(true);
+    expect(harvestChunk.pressureWriteImpulse).toBeGreaterThan(0);
+    expect(harvestChunk.pressureDiffusionActive).toBe(false);
 
     const exhausted = new Simulation({
       environmentMode: "closed",

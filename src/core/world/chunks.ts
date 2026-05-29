@@ -70,6 +70,10 @@ export function createChunkGrid(config: SimulationConfig, terrain: StaticTerrain
         summaryDirty: true,
         projectionDirty: true,
         pressureDiffusionActive: false,
+        pressureWriteCells: 0,
+        pressureWriteImpulse: 0,
+        pressureWriteLastTick: 0,
+        pressureWriteMaxDelta: 0,
         agentCount: 0,
         summary: emptyChunkSummary(id)
       };
@@ -179,6 +183,11 @@ export function createSchedulerStats(totalChunks: number): ChunkSchedulerStats {
     directTraceWriteChunks: 0,
     directPressureWriteChunks: 0,
     directMixedFieldWriteChunks: 0,
+    directPressureCandidateChunks: 0,
+    directPressurePromotedChunks: 0,
+    directPressureSuppressedChunks: 0,
+    directPressureWriteImpulse: 0,
+    diffusionBackgroundSourceChunks: 0,
     warmFieldUpdateChunks: 0,
     sleepingFieldUpdateChunks: 0,
     updatedChunks: 0,
@@ -244,11 +253,30 @@ export function touchChunkFieldWrite(grid: ChunkGrid, chunkId: number, tick: num
   chunk.activity = "active";
   chunk.fieldWriteMask |= mask;
   chunk.projectionDirtyMask |= mask;
-  if (mask & CHUNK_DIRTY.pressure) {
-    chunk.pressureDiffusionActive = true;
-  }
   chunk.summaryDirty = true;
   chunk.projectionDirty = true;
+}
+
+export function recordChunkPressureWriteCandidate(
+  grid: ChunkGrid,
+  chunkId: number,
+  tick: number,
+  pressureDelta = 0
+): void {
+  const chunk = grid.chunks[chunkId];
+  if (!chunk) {
+    return;
+  }
+  const delta = Math.max(0, pressureDelta);
+  if (chunk.pressureWriteLastTick !== tick) {
+    chunk.pressureWriteCells = 0;
+    chunk.pressureWriteImpulse = 0;
+    chunk.pressureWriteMaxDelta = 0;
+    chunk.pressureWriteLastTick = tick;
+  }
+  chunk.pressureWriteCells += 1;
+  chunk.pressureWriteImpulse += delta;
+  chunk.pressureWriteMaxDelta = Math.max(chunk.pressureWriteMaxDelta, delta);
 }
 
 export function markChunkSummaryDirty(grid: ChunkGrid, chunkId: number): void {
@@ -275,6 +303,20 @@ export function touchCell(grid: ChunkGrid, index: number, tick: number, dirtyMas
 
 export function touchCellFieldWrite(grid: ChunkGrid, index: number, tick: number, fieldMask: number): void {
   touchChunkFieldWrite(grid, chunkIdForIndex(grid, index), tick, fieldMask);
+}
+
+export function touchCellPressureFieldWrite(
+  grid: ChunkGrid,
+  index: number,
+  tick: number,
+  fieldMask: number,
+  pressureDelta: number
+): void {
+  const chunkId = chunkIdForIndex(grid, index);
+  touchChunkFieldWrite(grid, chunkId, tick, fieldMask);
+  if (fieldMask & CHUNK_DIRTY.pressure) {
+    recordChunkPressureWriteCandidate(grid, chunkId, tick, pressureDelta);
+  }
 }
 
 export function touchArea(
@@ -472,6 +514,18 @@ export function clearChunkFieldWriteMasks(grid: ChunkGrid): void {
   }
 }
 
+export function clearChunkPressureWriteCandidates(grid: ChunkGrid, tick: number): void {
+  for (const chunk of grid.chunks) {
+    if (chunk.pressureWriteLastTick > tick) {
+      continue;
+    }
+    chunk.pressureWriteCells = 0;
+    chunk.pressureWriteImpulse = 0;
+    chunk.pressureWriteMaxDelta = 0;
+    chunk.pressureWriteLastTick = 0;
+  }
+}
+
 export function refreshRegionSummary(
   region: RegionSummary,
   grid: ChunkGrid,
@@ -588,6 +642,8 @@ export function countChunkActivities(grid: ChunkGrid): Pick<
   | "directPressureWriteChunks"
   | "directResourceWriteChunks"
   | "directTraceWriteChunks"
+  | "directPressureCandidateChunks"
+  | "directPressureWriteImpulse"
   | "dirtyChunks"
   | "sleepingChunks"
   | "warmChunks"
@@ -604,6 +660,8 @@ export function countChunkActivities(grid: ChunkGrid): Pick<
   let directTraceWriteChunks = 0;
   let directPressureWriteChunks = 0;
   let directMixedFieldWriteChunks = 0;
+  let directPressureCandidateChunks = 0;
+  let directPressureWriteImpulse = 0;
 
   for (const chunk of grid.chunks) {
     const fieldWriteMask = chunk.fieldWriteMask & FIELD_DIRTY_MASK;
@@ -621,6 +679,10 @@ export function countChunkActivities(grid: ChunkGrid): Pick<
       if ((fieldWriteMask & (fieldWriteMask - 1)) !== 0) {
         directMixedFieldWriteChunks += 1;
       }
+    }
+    if (chunk.pressureWriteCells > 0 || chunk.pressureWriteImpulse > 0 || chunk.pressureWriteMaxDelta > 0) {
+      directPressureCandidateChunks += 1;
+      directPressureWriteImpulse += chunk.pressureWriteImpulse;
     }
     if (chunk.activity === "active") {
       activeChunks += 1;
@@ -652,6 +714,8 @@ export function countChunkActivities(grid: ChunkGrid): Pick<
     directMixedFieldWriteChunks,
     directPressureWriteChunks,
     directResourceWriteChunks,
+    directPressureCandidateChunks,
+    directPressureWriteImpulse,
     directTraceWriteChunks,
     dirtyChunks,
     sleepingChunks,

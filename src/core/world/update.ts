@@ -4,6 +4,7 @@ import {
   CHUNK_DIRTY,
   chunkFieldUpdateDecision,
   clearChunkFieldWriteMasks,
+  clearChunkPressureWriteCandidates,
   countChunkActivities,
   markChunkProjectionDirty,
   neighborChunkIds,
@@ -41,6 +42,7 @@ interface EnvironmentFieldUpdateResult {
   diffusionChunks: number;
   diffusionDeferredChunks: number;
   diffusionEffectiveChunks: number;
+  diffusionBackgroundSourceChunks: number;
   diffusionFrontierChunks: number;
   diffusionNearZeroCandidateChunks: number;
   diffusionNearZeroSkippedChunks: number;
@@ -64,6 +66,9 @@ interface DiffusionResult {
   deferredChunks: number;
   effectiveChunks: number;
   frontierChunks: number;
+  backgroundSourceChunks: number;
+  directPromotedChunks: number;
+  directSuppressedChunks: number;
   nearZeroCandidateChunks: number;
   nearZeroSkippedChunks: number;
   refreshedRegions: number;
@@ -93,6 +98,11 @@ interface PressureDiffusionSourceSelection {
 }
 
 interface PressureDiffusionSourceSelectionStats {
+  backgroundSourceChunks: number;
+  directCandidateChunks: number;
+  directPromotedChunks: number;
+  directSuppressedChunks: number;
+  directWriteImpulse: number;
   frontierChunks: number;
   skippedBackgroundChunks: number;
 }
@@ -102,6 +112,9 @@ const TERRAIN_MOISTURE_VISUAL_STEP = 1 / 255;
 const PRESSURE_DIFFUSION_CHUNK_DELTA_THRESHOLD = 0.25;
 const PRESSURE_DIFFUSION_FRONTIER_PRESSURE_THRESHOLD = 0.01;
 const PRESSURE_DIFFUSION_FRONTIER_DELTA_THRESHOLD = 0.02;
+const PRESSURE_DIRECT_PROMOTION_IMPULSE_THRESHOLD = 0.18;
+const PRESSURE_DIRECT_PROMOTION_CELL_THRESHOLD = 4;
+const PRESSURE_DIRECT_PROMOTION_MAX_DELTA_THRESHOLD = 0.45;
 const LARGE_WORLD_CELL_LIMIT = 65536;
 const PRESSURE_DIFFUSION_BACKGROUND_INTERVAL = 12;
 const MIN_PRESSURE_DIFFUSION_CHUNK_BUDGET = 8;
@@ -193,7 +206,7 @@ export function updateEnvironmentFields(
   let summaryRefreshChunks = 0;
   let summaryRefreshRegions = 0;
   const pressureDiffusionSourceSelection =
-    world.size > LARGE_WORLD_CELL_LIMIT ? selectPressureDiffusionSourceChunks(world, tick) : undefined;
+    world.size > LARGE_WORLD_CELL_LIMIT ? selectPressureDiffusionSourceChunks(world, config, tick) : undefined;
   const pressureDiffusionDeferredChunks = pressureDiffusionSourceSelection ? new Set<number>() : undefined;
 
   measureCoreProfile(profile, "core.world.environmentChunks", () => {
@@ -273,6 +286,10 @@ export function updateEnvironmentFields(
     directTraceWriteChunks: directFieldWriteCounts.directTraceWriteChunks,
     directPressureWriteChunks: directFieldWriteCounts.directPressureWriteChunks,
     directMixedFieldWriteChunks: directFieldWriteCounts.directMixedFieldWriteChunks,
+    directPressureCandidateChunks: directFieldWriteCounts.directPressureCandidateChunks,
+    directPressurePromotedChunks: diffusion.directPromotedChunks,
+    directPressureSuppressedChunks: diffusion.directSuppressedChunks,
+    directPressureWriteImpulse: directFieldWriteCounts.directPressureWriteImpulse,
     updatedChunks,
     updatedCells,
     preciseFieldUpdates,
@@ -289,6 +306,7 @@ export function updateEnvironmentFields(
     diffusionNeighborChunks: diffusion.neighborChunks,
     diffusionSelectedChunks: diffusion.selectedChunks,
     diffusionEffectiveChunks: diffusion.effectiveChunks,
+    diffusionBackgroundSourceChunks: diffusion.backgroundSourceChunks,
     diffusionFrontierChunks: diffusion.frontierChunks,
     diffusionRetainedFrontierChunks: diffusion.retainedFrontierChunks,
     diffusionDeferredChunks: diffusion.deferredChunks,
@@ -307,17 +325,22 @@ export function updateEnvironmentFields(
   profile?.recordValue("core.scheduler.directTraceWriteChunks", directFieldWriteCounts.directTraceWriteChunks);
   profile?.recordValue("core.scheduler.directPressureWriteChunks", directFieldWriteCounts.directPressureWriteChunks);
   profile?.recordValue("core.scheduler.directMixedFieldWriteChunks", directFieldWriteCounts.directMixedFieldWriteChunks);
+  profile?.recordValue("core.scheduler.directPressureCandidateChunks", directFieldWriteCounts.directPressureCandidateChunks);
+  profile?.recordValue("core.scheduler.directPressurePromotedChunks", diffusion.directPromotedChunks);
+  profile?.recordValue("core.scheduler.directPressureSuppressedChunks", diffusion.directSuppressedChunks);
+  profile?.recordValue("core.scheduler.directPressureWriteImpulse", directFieldWriteCounts.directPressureWriteImpulse);
   profile?.recordValue("core.scheduler.warmEnvironmentChunks", warmEnvironmentChunks);
   profile?.recordValue("core.scheduler.warmFieldUpdateChunks", warmFieldUpdateChunks);
   profile?.recordValue("core.scheduler.sleepingCatchupChunks", sleepingCatchupChunks);
   profile?.recordValue("core.scheduler.sleepingFieldUpdateChunks", sleepingFieldUpdateChunks);
   profile?.recordValue("core.scheduler.summaryRefreshChunks", summaryRefreshChunks);
   profile?.recordValue("core.scheduler.summaryRefreshRegions", summaryRefreshRegions);
-  return {
+  const result: EnvironmentFieldUpdateResult = {
     activeEnvironmentChunks,
     catchUpUpdatedCells,
     catchUpFieldUpdates,
     diffusionChunks: diffusion.selectedChunks,
+    diffusionBackgroundSourceChunks: diffusion.backgroundSourceChunks,
     diffusionDeferredChunks: diffusion.deferredChunks,
     diffusionEffectiveChunks: diffusion.effectiveChunks,
     diffusionFrontierChunks: diffusion.frontierChunks,
@@ -338,6 +361,8 @@ export function updateEnvironmentFields(
     warmEnvironmentChunks,
     sleepingCatchupChunks
   };
+  clearChunkPressureWriteCandidates(world.chunks, tick);
+  return result;
 }
 
 function updateEnvironmentChunk(
@@ -406,6 +431,9 @@ export function diffusePressure(
     const result = {
       deferredChunks: 0,
       effectiveChunks: 0,
+      backgroundSourceChunks: 0,
+      directPromotedChunks: 0,
+      directSuppressedChunks: 0,
       frontierChunks: 0,
       nearZeroCandidateChunks: 0,
       nearZeroSkippedChunks: 0,
@@ -426,6 +454,9 @@ export function diffusePressure(
   const explicitSourceChunkIds = options.sourceChunkIds ? new Set(options.sourceChunkIds) : null;
   const explicitFrontierChunkIds = options.frontierChunkIds ? new Set(options.frontierChunkIds) : null;
   const deferredChunkIds = options.deferredChunkIds;
+  const backgroundSourceChunks = options.sourceStats?.backgroundSourceChunks ?? 0;
+  const directPromotedChunks = options.sourceStats?.directPromotedChunks ?? 0;
+  const directSuppressedChunks = options.sourceStats?.directSuppressedChunks ?? 0;
   const frontierChunks = options.sourceStats?.frontierChunks ?? 0;
   const skippedBackgroundChunks = options.sourceStats?.skippedBackgroundChunks ?? 0;
   const selectedSourceBudget = explicitSourceChunkIds
@@ -569,6 +600,11 @@ export function diffusePressure(
   profile?.recordValue("core.diffusion.changedChunks", changedChunks);
   profile?.recordValue("core.diffusion.unchangedChunks", unchangedChunks);
   profile?.recordValue("core.diffusion.effectiveChunks", changedChunks);
+  profile?.recordValue("core.diffusion.backgroundSourceChunks", backgroundSourceChunks);
+  profile?.recordValue("core.diffusion.directCandidateChunks", options.sourceStats?.directCandidateChunks ?? 0);
+  profile?.recordValue("core.diffusion.directPromotedChunks", directPromotedChunks);
+  profile?.recordValue("core.diffusion.directSuppressedChunks", directSuppressedChunks);
+  profile?.recordValue("core.diffusion.directWriteImpulse", options.sourceStats?.directWriteImpulse ?? 0);
   profile?.recordValue("core.diffusion.frontierChunks", frontierChunks);
   profile?.recordValue("core.diffusion.retainedFrontierChunks", retainedFrontierChunkIds.size);
   profile?.recordValue("core.diffusion.skippedBackgroundChunks", skippedBackgroundChunks);
@@ -581,6 +617,9 @@ export function diffusePressure(
   const result = {
     deferredChunks,
     effectiveChunks: changedChunks,
+    backgroundSourceChunks,
+    directPromotedChunks,
+    directSuppressedChunks,
     frontierChunks,
     nearZeroCandidateChunks,
     nearZeroSkippedChunks,
@@ -600,6 +639,9 @@ function writeDiffusionSchedulerStats(world: WorldState, tick: number, result: D
     ...world.chunks.schedulerStats,
     tick,
     diffusionChunks: result.selectedChunks,
+    diffusionBackgroundSourceChunks: result.backgroundSourceChunks,
+    directPressurePromotedChunks: result.directPromotedChunks,
+    directPressureSuppressedChunks: result.directSuppressedChunks,
     diffusionSeedChunks: result.seedChunks,
     diffusionNeighborChunks: result.neighborChunks,
     diffusionSelectedChunks: result.selectedChunks,
@@ -664,39 +706,73 @@ function pressureDiffusionNeighborFrontierIds(
   return neighborIds;
 }
 
-function selectPressureDiffusionSourceChunks(world: WorldState, tick: number): PressureDiffusionSourceSelection {
+function pressureDirectWriteCandidateScore(chunk: ChunkRecord): number {
+  const cells = Math.max(1, chunk.width * chunk.height);
+  const density = chunk.pressureWriteCells / cells;
+  const averagePressure = chunk.summary.pressure / cells;
+  if (
+    chunk.pressureWriteImpulse < PRESSURE_DIRECT_PROMOTION_IMPULSE_THRESHOLD &&
+    chunk.pressureWriteCells < PRESSURE_DIRECT_PROMOTION_CELL_THRESHOLD &&
+    chunk.pressureWriteMaxDelta < PRESSURE_DIRECT_PROMOTION_MAX_DELTA_THRESHOLD &&
+    averagePressure < PRESSURE_DIFFUSION_FRONTIER_PRESSURE_THRESHOLD
+  ) {
+    return 0;
+  }
+  return chunk.pressureWriteImpulse + chunk.pressureWriteMaxDelta * 2 + density * 8 + averagePressure * 0.08;
+}
+
+function selectPressureDiffusionSourceChunks(world: WorldState, config: SimulationConfig, tick: number): PressureDiffusionSourceSelection {
   const sourceChunkIds = new Set<number>();
   const frontierChunkIds = new Set<number>();
+  const directCandidates: Array<{ chunk: ChunkRecord; score: number }> = [];
+  let backgroundSourceChunks = 0;
+  let directCandidateChunks = 0;
+  let directPromotedChunks = 0;
+  let directSuppressedChunks = 0;
+  let directWriteImpulse = 0;
   let frontierChunks = 0;
   let skippedBackgroundChunks = 0;
   const interval = PRESSURE_DIFFUSION_BACKGROUND_INTERVAL;
+  const sourceBudget = pressureDiffusionSourceBudget(config, world.chunks.chunks.length);
 
   for (const chunk of world.chunks.chunks) {
     if (chunk.pressureDiffusionActive || chunk.fieldDirtyMask & CHUNK_DIRTY.pressure) {
       sourceChunkIds.add(chunk.id);
       frontierChunkIds.add(chunk.id);
       frontierChunks += 1;
-    }
-  }
-
-  if (sourceChunkIds.size > 0) {
-    return {
-      chunkIds: sourceChunkIds,
-      frontierChunkIds,
-      stats: {
-        frontierChunks,
-        skippedBackgroundChunks
-      }
-    };
-  }
-
-  for (const chunk of world.chunks.chunks) {
-    if (chunk.summary.pressure <= PRESSURE_DIFFUSION_FRONTIER_PRESSURE_THRESHOLD) {
-      skippedBackgroundChunks += 1;
       continue;
     }
-    if ((chunk.id + tick) % interval === 0) {
-      sourceChunkIds.add(chunk.id);
+    if (chunk.pressureWriteLastTick <= tick && (chunk.pressureWriteImpulse > 0 || chunk.pressureWriteCells > 0)) {
+      directCandidateChunks += 1;
+      directWriteImpulse += chunk.pressureWriteImpulse;
+      const score = pressureDirectWriteCandidateScore(chunk);
+      if (score > 0) {
+        directCandidates.push({ chunk, score });
+      }
+    }
+  }
+
+  directCandidates.sort((a, b) => b.score - a.score || a.chunk.id - b.chunk.id);
+  for (const candidate of directCandidates) {
+    if (sourceChunkIds.size >= sourceBudget) {
+      continue;
+    }
+    sourceChunkIds.add(candidate.chunk.id);
+    directPromotedChunks += 1;
+  }
+
+  directSuppressedChunks = Math.max(0, directCandidateChunks - directPromotedChunks);
+
+  if (sourceChunkIds.size === 0) {
+    for (const chunk of world.chunks.chunks) {
+      if (chunk.summary.pressure <= PRESSURE_DIFFUSION_FRONTIER_PRESSURE_THRESHOLD) {
+        skippedBackgroundChunks += 1;
+        continue;
+      }
+      if (sourceChunkIds.size < sourceBudget && (chunk.id + tick) % interval === 0) {
+        sourceChunkIds.add(chunk.id);
+        backgroundSourceChunks += 1;
+      }
     }
   }
 
@@ -704,6 +780,11 @@ function selectPressureDiffusionSourceChunks(world: WorldState, tick: number): P
     chunkIds: sourceChunkIds,
     frontierChunkIds,
     stats: {
+      backgroundSourceChunks,
+      directCandidateChunks,
+      directPromotedChunks,
+      directSuppressedChunks,
+      directWriteImpulse,
       frontierChunks,
       skippedBackgroundChunks
     }
