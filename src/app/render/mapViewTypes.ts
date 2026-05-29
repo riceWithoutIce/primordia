@@ -7,7 +7,7 @@ export type OverlayState = Record<OverlayLayer, boolean>;
 export const DEFAULT_BASE_LAYER: BaseLayer = "terrain";
 
 export const DEFAULT_OVERLAYS: OverlayState = {
-  resources: true,
+  resources: false,
   agents: true,
   processes: true,
   pressure: false,

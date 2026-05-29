@@ -68,7 +68,7 @@ Phase 2.2.14 acceptance check:
 
 ## Follow-Up Review Notes
 
-- Phase 2.2.16 introduced the first base-layer plus overlay-layer map controls. The default view is `terrain` with resource, agent, and process overlays enabled. Future review should focus on whether new layers such as species, rivers, wind, migration, and death heatmaps belong as optional overlays, not as additional top-level mode buttons.
+- Phase 2.2.16 introduced the first base-layer plus overlay-layer map controls. The current default view is `terrain` with agent and process overlays enabled; resource, pressure, and lineage overlays are optional. Future review should focus on whether new layers such as species, rivers, wind, migration, and death heatmaps belong as optional overlays, not as additional top-level mode buttons.
 
 ## Result
 

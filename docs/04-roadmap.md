@@ -91,7 +91,7 @@
 当前状态：
 
 - Phase 2.2 已完成并验收。默认世界尺寸为 `256 x 160`，core 已拆分为 config/random/world/life/sim 模块，`ExperimentSnapshot` 为 `schemaVersion: 2`。
-- UI 默认使用 terrain base map，并叠加 resource、agent 和 process overlays；pressure 和 lineage 作为可选 overlays。
+- UI 默认使用 terrain base map，并叠加 agent 和 process overlays；resource、pressure 和 lineage 作为可选 overlays。
 - 大世界性能基线已记录：#43 优化后默认核心长跑 `step(1000)` 约为优化前的十分之一。
 
 ## Phase 3：行为器官与工具边界

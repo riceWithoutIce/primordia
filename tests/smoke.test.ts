@@ -133,7 +133,7 @@ describe("primordia simulation smoke", () => {
   it("keeps terrain visualization configurable and covers cold biomes", () => {
     expect(TERRAIN_RENDER_CONFIG.contourInterval).toBeGreaterThan(0);
     expect(DEFAULT_BASE_LAYER).toBe("terrain");
-    expect(DEFAULT_OVERLAYS.resources).toBe(true);
+    expect(DEFAULT_OVERLAYS.resources).toBe(false);
     expect(DEFAULT_OVERLAYS.agents).toBe(true);
     expect(DEFAULT_OVERLAYS.processes).toBe(true);
     expect(DEFAULT_OVERLAYS.pressure).toBe(false);

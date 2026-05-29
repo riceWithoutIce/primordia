@@ -58,11 +58,11 @@ describe("visibility-aware projection invalidation", () => {
     expect(selection.chunks).toHaveLength(1);
   });
 
-  it("still reprojects resource dirty chunks for the default resource overlay", () => {
+  it("reprojects resource dirty chunks when the resource overlay is visible", () => {
     const sim = createCleanProjectionSimulation();
     const target = sim.world.chunks.chunks[3];
     markChunkProjectionDirty(sim.world.chunks, target.id, CHUNK_DIRTY.resource);
-    const dependencyMask = projectionDependencyMask("terrain", DEFAULT_OVERLAYS);
+    const dependencyMask = projectionDependencyMask("terrain", { ...DEFAULT_OVERLAYS, resources: true });
 
     const selection = selectProjectionChunks(sim.world.chunks.chunks, true, dependencyMask);
 
