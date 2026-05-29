@@ -390,6 +390,38 @@ describe("typed simulation core", () => {
     expect(sim.world.chunks.schedulerStats.diffusionSelectedChunks).toBeLessThan(sim.world.chunks.chunks.length / 2);
   });
 
+  it("skips empty large-world background pressure chunks when no frontier is active", () => {
+    const sim = new Simulation({
+      environmentMode: "flux",
+      width: 960,
+      height: 640,
+      chunkSize: 32,
+      initialAgents: 0,
+      pressureDecay: 1,
+      pressureDiffusion: 0.2,
+      pressureGrowth: 0,
+      resourceGrowth: 0,
+      seed: 20260621
+    });
+    sim.pressure.fill(0);
+    for (const chunk of sim.world.chunks.chunks) {
+      chunk.activity = "sleeping";
+      chunk.dirtyMask = 0;
+      chunk.fieldDirtyMask = 0;
+      chunk.projectionDirtyMask = 0;
+      chunk.projectionDirty = false;
+      chunk.pressureDiffusionActive = false;
+      chunk.summary.pressure = 0;
+    }
+
+    updateEnvironmentFields(sim.world, sim.config, 1, sim.random);
+
+    const stats = sim.world.chunks.schedulerStats;
+    expect(stats.diffusionFrontierChunks).toBe(0);
+    expect(stats.diffusionSelectedChunks).toBe(0);
+    expect(stats.diffusionSkippedBackgroundChunks).toBe(sim.world.chunks.chunks.length);
+  });
+
   it("defers pressure diffusion sources that exceed the hard chunk budget", () => {
     const sim = new Simulation({
       environmentMode: "flux",
@@ -428,7 +460,9 @@ describe("typed simulation core", () => {
     expect(stats.diffusionSelectedChunks).toBeLessThanOrEqual(sim.config.pressureDiffusionChunkBudget);
     expect(stats.diffusionSeedChunks).toBeLessThanOrEqual(sim.config.pressureDiffusionSourceBudget);
     expect(stats.diffusionDeferredChunks).toBeGreaterThan(0);
-    expect(sim.world.chunks.chunks.filter((chunk) => chunk.pressureDiffusionActive)).toHaveLength(stats.diffusionDeferredChunks);
+    const activeFrontierChunks = sim.world.chunks.chunks.filter((chunk) => chunk.pressureDiffusionActive);
+    expect(activeFrontierChunks.length).toBe(stats.diffusionRetainedFrontierChunks);
+    expect(activeFrontierChunks.length).toBeGreaterThanOrEqual(stats.diffusionDeferredChunks);
   });
 
   it("marks lazily updated sleeping chunks dirty for projection refresh", () => {

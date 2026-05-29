@@ -247,9 +247,12 @@ export interface ChunkSchedulerStats {
   diffusionNeighborChunks: number;
   diffusionSelectedChunks: number;
   diffusionEffectiveChunks: number;
+  diffusionFrontierChunks: number;
+  diffusionRetainedFrontierChunks: number;
   diffusionDeferredChunks: number;
   diffusionNearZeroCandidateChunks: number;
   diffusionNearZeroSkippedChunks: number;
+  diffusionSkippedBackgroundChunks: number;
   lastTickPlan: TickPlan | null;
   lastTickReport: TickReport | null;
 }

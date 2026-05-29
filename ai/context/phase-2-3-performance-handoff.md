@@ -14,6 +14,7 @@ Update 2026-05-28:
 - Phase 2.3.22 first pass is implemented locally: agent occupancy and agent-only movement dirtiness no longer force immediate full environment field scans. Field updates now key off field dirty bits or warm/sleeping cadence, and scheduler diagnostics separate agent-only, field-dirty, and mixed active chunks.
 - Phase 2.3.23 first pass is implemented locally: direct agent field writes now use a separate `fieldWriteMask` path for projection, summary, and pressure-frontier observability instead of putting the chunk into the immediate full-field update lane. This is the first practical trace/resource/pressure sub-lane split.
 - Phase 2.3.24 starts the dirty-domain split: chunks now carry `fieldDirtyMask` for environment field-lane work, `fieldWriteMask` for direct agent/organ writes, `summaryDirty` for aggregate refresh, `pressureDiffusionActive` for pressure frontier continuation, and `projectionDirtyMask` for render-cache invalidation only. Terrain projection consumes visible moisture debt and retires hidden resource/pressure render debt without clearing core field-write, summary, or diffusion-frontier state.
+- Phase 2.3.25 first pass starts pressure-frontier diffusion: large-world diffusion source selection now prioritizes `pressureDiffusionActive` / pressure field dirty chunks, skips empty background chunks, expands to neighbor chunks only when a boundary pressure gradient exists, and keeps changed/deferred chunks in the frontier only while pressure remains meaningful.
 
 ## Current State
 
@@ -126,7 +127,7 @@ End-of-day boundary:
 
 Tomorrow queue:
 
-1. Continue under #71 as Phase 2.3.25 pressure frontier diffusion. Target `core.diffusion.selectedChunks p95 = 128`, `computedCells p95 = 131072`, and `deferredChunks p95 = 213`.
+1. Validate Phase 2.3.25 pressure frontier diffusion in the browser. Target reductions from the previous baseline are `core.diffusion.selectedChunks p95 = 128`, `computedCells p95 = 131072`, and `deferredChunks p95 = 213`.
 2. Keep #75 as the acceptance evidence task until terrain-only and pressure-visible deep profiles both pass or have explicit follow-up issues.
 3. If pressure-frontier work does not bring `sim.step` under budget, inspect warm/sleeping catch-up cadence next.
 4. Track terrain projection fast-path separately: late-run `25-27` visible terrain chunks costing `18-19ms` is suspicious, but it is secondary to core tick pressure.
@@ -169,6 +170,33 @@ Validation in this pass:
   - `core.diffusion.computedCells p95`: `131072`
 
 Interpretation: the Node hot-step benchmark did not regress after the dirty-domain split. The browser smoke profile confirms hidden resource/pressure render debt is retired instead of retained across terrain-only frames, and render p95 drops sharply versus the previous `~19ms` profile. Simulation tick p95 still fails, with pressure diffusion still selecting the full `128` chunk budget, so the next structural target should be pressure-frontier diffusion rather than more projection invalidation work.
+
+After the Phase 2.3.25 pressure-frontier first pass, `npm run bench:core` produced one fast run before the final background-frontier guard:
+
+- `960x640 initialize`: mean about `3026.67ms`
+- `960x640 cold step(16)`: mean about `3513.58ms`
+- `960x640 hot step(16)`: mean about `621.30ms`
+- `960x640 hot snapshot stride 48`: mean about `3.4045ms`
+
+The later run after the final source-continuation guard was noisier and slower:
+
+- `960x640 initialize`: mean about `4502.12ms`
+- `960x640 cold step(16)`: mean about `4530.00ms`
+- `960x640 hot step(16)`: mean about `742.18ms`
+- `960x640 hot snapshot stride 48`: mean about `3.5598ms`
+
+Interpret the Node benchmark as inconclusive until it is rerun on a quieter machine state. The browser profile is currently the better signal for the pressure-frontier change.
+
+Validation in this pass so far:
+
+- `npm run check`: passed, `88` tests.
+- `npm run build`: passed.
+- `npm run bench:core`: completed with the benchmark above.
+- Browser terrain-only deep profiles were run against the local Vite dev server:
+  - best terrain run after frontier-aware neighbor expansion: `sim.step p50/p95 ~27.0ms/31.8ms`, `core.world.diffusePressure p50/p95 ~6.2ms/9.5ms`, `core.diffusion.selectedChunks p95 124`, `computedCells p95 126976`, `runtime.backlogTicks p95 ~1.0`, `render.total p95 ~15.0ms`
+  - a stricter background-continuation run showed `frontierChunks p95 ~365`, `deferredChunks p95 ~301`, `selectedChunks p95 124`, and `sim.step p50/p95 ~27.5ms/37.8ms`
+  - interpretation: pressure diffusion p95 improved versus the Phase 2.3.24 baseline (`~13.5ms`), but direct pressure writes still create a very wide active frontier, so #71 is improved but not closed
+- Pressure-visible profile is still required before closing #71/#75.
 
 ## Historical Profile Superseded By Current Baseline
 
@@ -232,7 +260,7 @@ Pressure diffusion remains a core compute hotspot, but should be treated as a la
 - current `core.diffusion.deferredChunks p95`: `213`
 - current `core.diffusion.nearZeroSkippedChunks p95`: `0`
 
-Tomorrow's first design target should be a true pressure frontier:
+Phase 2.3.25 first pass implements a true pressure frontier:
 
 - keep direct pressure writes and `pressureDiffusionActive` as the seed domain
 - expand to neighbors only while meaningful pressure delta exists
@@ -240,6 +268,19 @@ Tomorrow's first design target should be a true pressure frontier:
 - keep deterministic replay stable for same seed/config/tick
 - continue refreshing only changed chunk/region summaries
 - keep render projection as a consumer of dirty state, not the owner of simulation debt
+
+New profile counters for this pass:
+
+- `core.diffusion.frontierChunks`
+- `core.diffusion.retainedFrontierChunks`
+- `core.diffusion.skippedBackgroundChunks`
+
+Remaining #71 findings after the first browser profile:
+
+- Frontier source chunks are still broad because direct pressure writes cover hundreds of chunks at 900 agents.
+- `selectedChunks p95` dropped only slightly from `128` to about `124`, but `core.world.diffusePressure p95` improved from about `13.5ms` to about `9.5ms` because neighbor expansion is now gradient-aware.
+- Do not hide this by simply lowering `pressureDiffusionSourceBudget`; the next structural decision should separate local direct pressure writes from global pressure diffusion sources, or aggregate direct write frontier by region/pressure intensity before source selection.
+- Terrain projection remains a separate render-side issue: terrain-only profiles still show `projection.projectedChunks p95 ~25` with `render.total p95 ~15ms`.
 
 ## GitHub Project Note
 

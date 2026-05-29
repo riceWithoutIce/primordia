@@ -41,11 +41,14 @@ interface EnvironmentFieldUpdateResult {
   diffusionChunks: number;
   diffusionDeferredChunks: number;
   diffusionEffectiveChunks: number;
+  diffusionFrontierChunks: number;
   diffusionNearZeroCandidateChunks: number;
   diffusionNearZeroSkippedChunks: number;
   diffusionNeighborChunks: number;
+  diffusionRetainedFrontierChunks: number;
   diffusionSeedChunks: number;
   diffusionSelectedChunks: number;
+  diffusionSkippedBackgroundChunks: number;
   preciseFieldUpdates: number;
   preciseUpdatedCells: number;
   summaryRefreshChunks: number;
@@ -60,9 +63,12 @@ interface EnvironmentFieldUpdateResult {
 interface DiffusionResult {
   deferredChunks: number;
   effectiveChunks: number;
+  frontierChunks: number;
   nearZeroCandidateChunks: number;
   nearZeroSkippedChunks: number;
   refreshedRegions: number;
+  retainedFrontierChunks: number;
+  skippedBackgroundChunks: number;
   neighborChunks: number;
   seedChunks: number;
   selectedChunks: number;
@@ -70,7 +76,9 @@ interface DiffusionResult {
 
 interface DiffusionOptions {
   deferredChunkIds?: Set<number>;
+  frontierChunkIds?: Iterable<number>;
   sourceChunkIds?: Iterable<number>;
+  sourceStats?: PressureDiffusionSourceSelectionStats;
 }
 
 interface EnvironmentChunkUpdateResult {
@@ -78,9 +86,22 @@ interface EnvironmentChunkUpdateResult {
   updatedCells: number;
 }
 
+interface PressureDiffusionSourceSelection {
+  chunkIds: Set<number>;
+  frontierChunkIds: Set<number>;
+  stats: PressureDiffusionSourceSelectionStats;
+}
+
+interface PressureDiffusionSourceSelectionStats {
+  frontierChunks: number;
+  skippedBackgroundChunks: number;
+}
+
 const TERRAIN_MOISTURE_VISUAL_SCALE = 0.22;
 const TERRAIN_MOISTURE_VISUAL_STEP = 1 / 255;
 const PRESSURE_DIFFUSION_CHUNK_DELTA_THRESHOLD = 0.25;
+const PRESSURE_DIFFUSION_FRONTIER_PRESSURE_THRESHOLD = 0.01;
+const PRESSURE_DIFFUSION_FRONTIER_DELTA_THRESHOLD = 0.02;
 const LARGE_WORLD_CELL_LIMIT = 65536;
 const PRESSURE_DIFFUSION_BACKGROUND_INTERVAL = 12;
 const MIN_PRESSURE_DIFFUSION_CHUNK_BUDGET = 8;
@@ -171,9 +192,9 @@ export function updateEnvironmentFields(
   let sleepingFieldUpdateChunks = 0;
   let summaryRefreshChunks = 0;
   let summaryRefreshRegions = 0;
-  const pressureDiffusionSourceChunks =
+  const pressureDiffusionSourceSelection =
     world.size > LARGE_WORLD_CELL_LIMIT ? selectPressureDiffusionSourceChunks(world, tick) : undefined;
-  const pressureDiffusionDeferredChunks = pressureDiffusionSourceChunks ? new Set<number>() : undefined;
+  const pressureDiffusionDeferredChunks = pressureDiffusionSourceSelection ? new Set<number>() : undefined;
 
   measureCoreProfile(profile, "core.world.environmentChunks", () => {
     for (const chunk of world.chunks.chunks) {
@@ -221,7 +242,9 @@ export function updateEnvironmentFields(
   const diffusion = measureCoreProfile(profile, "core.world.diffusePressure", () =>
     diffusePressure(world, config, tick, profile, {
       deferredChunkIds: pressureDiffusionDeferredChunks,
-      sourceChunkIds: pressureDiffusionSourceChunks
+      frontierChunkIds: pressureDiffusionSourceSelection?.frontierChunkIds,
+      sourceChunkIds: pressureDiffusionSourceSelection?.chunkIds,
+      sourceStats: pressureDiffusionSourceSelection?.stats
     })
   );
   const activityCounts = countChunkActivities(world.chunks);
@@ -266,9 +289,12 @@ export function updateEnvironmentFields(
     diffusionNeighborChunks: diffusion.neighborChunks,
     diffusionSelectedChunks: diffusion.selectedChunks,
     diffusionEffectiveChunks: diffusion.effectiveChunks,
+    diffusionFrontierChunks: diffusion.frontierChunks,
+    diffusionRetainedFrontierChunks: diffusion.retainedFrontierChunks,
     diffusionDeferredChunks: diffusion.deferredChunks,
     diffusionNearZeroCandidateChunks: diffusion.nearZeroCandidateChunks,
     diffusionNearZeroSkippedChunks: diffusion.nearZeroSkippedChunks,
+    diffusionSkippedBackgroundChunks: diffusion.skippedBackgroundChunks,
     lastTickPlan: tickPlan,
     lastTickReport: tickReport
   };
@@ -294,11 +320,14 @@ export function updateEnvironmentFields(
     diffusionChunks: diffusion.selectedChunks,
     diffusionDeferredChunks: diffusion.deferredChunks,
     diffusionEffectiveChunks: diffusion.effectiveChunks,
+    diffusionFrontierChunks: diffusion.frontierChunks,
     diffusionNearZeroCandidateChunks: diffusion.nearZeroCandidateChunks,
     diffusionNearZeroSkippedChunks: diffusion.nearZeroSkippedChunks,
     diffusionNeighborChunks: diffusion.neighborChunks,
+    diffusionRetainedFrontierChunks: diffusion.retainedFrontierChunks,
     diffusionSeedChunks: diffusion.seedChunks,
     diffusionSelectedChunks: diffusion.selectedChunks,
+    diffusionSkippedBackgroundChunks: diffusion.skippedBackgroundChunks,
     preciseFieldUpdates,
     preciseUpdatedCells,
     summaryRefreshChunks,
@@ -377,9 +406,12 @@ export function diffusePressure(
     const result = {
       deferredChunks: 0,
       effectiveChunks: 0,
+      frontierChunks: 0,
       nearZeroCandidateChunks: 0,
       nearZeroSkippedChunks: 0,
       refreshedRegions: 0,
+      retainedFrontierChunks: 0,
+      skippedBackgroundChunks: 0,
       neighborChunks: 0,
       seedChunks: 0,
       selectedChunks: 0
@@ -392,7 +424,10 @@ export function diffusePressure(
   const chunksToDiffuse = new Set<number>();
   const sourceChunksToDiffuse = new Set<number>();
   const explicitSourceChunkIds = options.sourceChunkIds ? new Set(options.sourceChunkIds) : null;
+  const explicitFrontierChunkIds = options.frontierChunkIds ? new Set(options.frontierChunkIds) : null;
   const deferredChunkIds = options.deferredChunkIds;
+  const frontierChunks = options.sourceStats?.frontierChunks ?? 0;
+  const skippedBackgroundChunks = options.sourceStats?.skippedBackgroundChunks ?? 0;
   const selectedSourceBudget = explicitSourceChunkIds
     ? pressureDiffusionSourceBudget(config, explicitSourceChunkIds.size)
     : Number.POSITIVE_INFINITY;
@@ -414,9 +449,10 @@ export function diffusePressure(
       if (chunk.summary.pressure <= 0.0001 && !chunk.fieldDirtyMask) {
         nearZeroCandidateChunks += 1;
       }
+      const neighborFrontierIds = pressureDiffusionNeighborFrontierIds(world, pressure, chunk, chunksToDiffuse);
       if (
         sourceChunksToDiffuse.size >= selectedSourceBudget ||
-        !canAddDiffusionSource(world.chunks, chunksToDiffuse, chunk.id, selectedChunkBudget)
+        !canAddDiffusionSource(chunksToDiffuse, chunk.id, neighborFrontierIds, selectedChunkBudget)
       ) {
         chunk.pressureDiffusionActive = true;
         deferredChunkIds?.add(chunk.id);
@@ -424,7 +460,7 @@ export function diffusePressure(
       }
       chunksToDiffuse.add(chunk.id);
       sourceChunksToDiffuse.add(chunk.id);
-      for (const neighborId of neighborChunkIds(world.chunks, chunk)) {
+      for (const neighborId of neighborFrontierIds) {
         if (chunksToDiffuse.size < selectedChunkBudget) {
           chunksToDiffuse.add(neighborId);
         }
@@ -467,6 +503,7 @@ export function diffusePressure(
   let unchangedCells = 0;
   let changedChunks = 0;
   let unchangedChunks = 0;
+  const retainedFrontierChunkIds = new Set<number>();
   const changedRegionIds = new Set<number>();
   measureCoreProfile(profile, "core.diffusion.commit", () => {
     for (const chunkId of chunksToDiffuse) {
@@ -474,6 +511,7 @@ export function diffusePressure(
       let pressureTotal = 0;
       let chunkChanged = false;
       let chunkDelta = 0;
+      let maxCellDelta = 0;
       chunk.pressureDiffusionActive = false;
       for (let y = chunk.startY; y < chunk.endY; y += 1) {
         for (let x = chunk.startX; x < chunk.endX; x += 1) {
@@ -487,6 +525,7 @@ export function diffusePressure(
             unchangedCells += 1;
           }
           chunkDelta += delta;
+          maxCellDelta = Math.max(maxCellDelta, delta);
           pressure[idx] = next;
           pressureTotal += next;
         }
@@ -496,16 +535,32 @@ export function diffusePressure(
         changedChunks += 1;
         changedRegionIds.add(chunk.regionId);
         markChunkProjectionDirty(world.chunks, chunk.id, CHUNK_DIRTY.pressure);
+        if (!explicitFrontierChunkIds || explicitFrontierChunkIds.has(chunk.id)) {
+          if (maxCellDelta >= PRESSURE_DIFFUSION_FRONTIER_DELTA_THRESHOLD) {
+            retainedFrontierChunkIds.add(chunk.id);
+          }
+          for (const neighborId of neighborChunkIds(world.chunks, chunk)) {
+            const neighbor = world.chunks.chunks[neighborId];
+            if (neighbor && pressureFrontierGradient(world, pressure, chunk, neighbor)) {
+              retainedFrontierChunkIds.add(neighborId);
+            }
+          }
+        }
       } else {
         unchangedChunks += 1;
       }
     }
     if (deferredChunkIds) {
       for (const chunkId of deferredChunkIds) {
-        const chunk = world.chunks.chunks[chunkId];
-        if (chunk) {
-          chunk.pressureDiffusionActive = true;
+        if (world.chunks.chunks[chunkId]) {
+          retainedFrontierChunkIds.add(chunkId);
         }
+      }
+    }
+    for (const chunkId of retainedFrontierChunkIds) {
+      const chunk = world.chunks.chunks[chunkId];
+      if (chunk) {
+        chunk.pressureDiffusionActive = true;
       }
     }
   });
@@ -514,6 +569,9 @@ export function diffusePressure(
   profile?.recordValue("core.diffusion.changedChunks", changedChunks);
   profile?.recordValue("core.diffusion.unchangedChunks", unchangedChunks);
   profile?.recordValue("core.diffusion.effectiveChunks", changedChunks);
+  profile?.recordValue("core.diffusion.frontierChunks", frontierChunks);
+  profile?.recordValue("core.diffusion.retainedFrontierChunks", retainedFrontierChunkIds.size);
+  profile?.recordValue("core.diffusion.skippedBackgroundChunks", skippedBackgroundChunks);
   profile?.recordValue("core.dirty.pressureAfterDiffusion", countProjectionDirtyMask(world, CHUNK_DIRTY.pressure));
   profile?.recordValue("core.dirty.moistureAfterDiffusion", countProjectionDirtyMask(world, CHUNK_DIRTY.moisture));
 
@@ -523,9 +581,12 @@ export function diffusePressure(
   const result = {
     deferredChunks,
     effectiveChunks: changedChunks,
+    frontierChunks,
     nearZeroCandidateChunks,
     nearZeroSkippedChunks,
     refreshedRegions: changedRegionIds.size,
+    retainedFrontierChunks: retainedFrontierChunkIds.size,
+    skippedBackgroundChunks,
     neighborChunks: neighborExpansionChunks,
     seedChunks: sourceChunksToDiffuse.size,
     selectedChunks: chunksToDiffuse.size
@@ -543,9 +604,12 @@ function writeDiffusionSchedulerStats(world: WorldState, tick: number, result: D
     diffusionNeighborChunks: result.neighborChunks,
     diffusionSelectedChunks: result.selectedChunks,
     diffusionEffectiveChunks: result.effectiveChunks,
+    diffusionFrontierChunks: result.frontierChunks,
+    diffusionRetainedFrontierChunks: result.retainedFrontierChunks,
     diffusionDeferredChunks: result.deferredChunks,
     diffusionNearZeroCandidateChunks: result.nearZeroCandidateChunks,
-    diffusionNearZeroSkippedChunks: result.nearZeroSkippedChunks
+    diffusionNearZeroSkippedChunks: result.nearZeroSkippedChunks,
+    diffusionSkippedBackgroundChunks: result.skippedBackgroundChunks
   };
 }
 
@@ -564,20 +628,16 @@ function pressureDiffusionChunkBudget(config: SimulationConfig, totalChunks: num
 }
 
 function canAddDiffusionSource(
-  grid: ChunkGrid,
   selectedChunkIds: Set<number>,
   sourceChunkId: number,
+  neighborFrontierIds: number[],
   selectedChunkBudget: number
 ): boolean {
   if (selectedChunkIds.has(sourceChunkId)) {
     return true;
   }
   let additionalChunks = 1;
-  const sourceChunk = grid.chunks[sourceChunkId];
-  if (!sourceChunk) {
-    return false;
-  }
-  for (const neighborId of neighborChunkIds(grid, sourceChunk)) {
+  for (const neighborId of neighborFrontierIds) {
     if (!selectedChunkIds.has(neighborId)) {
       additionalChunks += 1;
     }
@@ -585,27 +645,69 @@ function canAddDiffusionSource(
   return selectedChunkIds.size + additionalChunks <= selectedChunkBudget;
 }
 
-function selectPressureDiffusionSourceChunks(world: WorldState, tick: number): Set<number> {
+function pressureDiffusionNeighborFrontierIds(
+  world: WorldState,
+  pressure: Float32Array,
+  chunk: ChunkRecord,
+  selectedChunkIds: Set<number>
+): number[] {
+  const neighborIds: number[] = [];
+  for (const neighborId of neighborChunkIds(world.chunks, chunk)) {
+    if (selectedChunkIds.has(neighborId)) {
+      continue;
+    }
+    const neighbor = world.chunks.chunks[neighborId];
+    if (neighbor && pressureFrontierGradient(world, pressure, chunk, neighbor)) {
+      neighborIds.push(neighborId);
+    }
+  }
+  return neighborIds;
+}
+
+function selectPressureDiffusionSourceChunks(world: WorldState, tick: number): PressureDiffusionSourceSelection {
   const sourceChunkIds = new Set<number>();
+  const frontierChunkIds = new Set<number>();
+  let frontierChunks = 0;
+  let skippedBackgroundChunks = 0;
   const interval = PRESSURE_DIFFUSION_BACKGROUND_INTERVAL;
 
   for (const chunk of world.chunks.chunks) {
     if (chunk.pressureDiffusionActive || chunk.fieldDirtyMask & CHUNK_DIRTY.pressure) {
       sourceChunkIds.add(chunk.id);
+      frontierChunkIds.add(chunk.id);
+      frontierChunks += 1;
     }
   }
 
   if (sourceChunkIds.size > 0) {
-    return sourceChunkIds;
+    return {
+      chunkIds: sourceChunkIds,
+      frontierChunkIds,
+      stats: {
+        frontierChunks,
+        skippedBackgroundChunks
+      }
+    };
   }
 
   for (const chunk of world.chunks.chunks) {
+    if (chunk.summary.pressure <= PRESSURE_DIFFUSION_FRONTIER_PRESSURE_THRESHOLD) {
+      skippedBackgroundChunks += 1;
+      continue;
+    }
     if ((chunk.id + tick) % interval === 0) {
       sourceChunkIds.add(chunk.id);
     }
   }
 
-  return sourceChunkIds;
+  return {
+    chunkIds: sourceChunkIds,
+    frontierChunkIds,
+    stats: {
+      frontierChunks,
+      skippedBackgroundChunks
+    }
+  };
 }
 
 function countProjectionDirtyMask(world: WorldState, mask: number): number {
@@ -627,6 +729,51 @@ function countChunkCells(chunks: ChunkRecord[], chunkIds: Set<number>): number {
     }
   }
   return cells;
+}
+
+function pressureFrontierGradient(
+  world: WorldState,
+  pressure: Float32Array,
+  source: ChunkRecord,
+  neighbor: ChunkRecord
+): boolean {
+  const columns = world.chunks.columns;
+  const rows = world.chunks.rows;
+  const east = (source.x + 1) % columns === neighbor.x;
+  const west = (source.x + columns - 1) % columns === neighbor.x;
+  const south = (source.y + 1) % rows === neighbor.y;
+  const north = (source.y + rows - 1) % rows === neighbor.y;
+
+  if (north || south) {
+    const sourceY = south ? source.endY - 1 : source.startY;
+    const neighborY = south ? neighbor.startY : neighbor.endY - 1;
+    for (let x = source.startX; x < source.endX; x += 1) {
+      const sourcePressure = pressure[sourceY * world.width + x];
+      const neighborPressure = pressure[neighborY * world.width + x];
+      if (pressureBoundaryDeltaIsActive(sourcePressure, neighborPressure)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (west || east) {
+    const sourceX = east ? source.endX - 1 : source.startX;
+    const neighborX = east ? neighbor.startX : neighbor.endX - 1;
+    for (let y = source.startY; y < source.endY; y += 1) {
+      const sourcePressure = pressure[y * world.width + sourceX];
+      const neighborPressure = pressure[y * world.width + neighborX];
+      if (pressureBoundaryDeltaIsActive(sourcePressure, neighborPressure)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function pressureBoundaryDeltaIsActive(a: number, b: number): boolean {
+  return Math.max(a, b) >= PRESSURE_DIFFUSION_FRONTIER_PRESSURE_THRESHOLD && Math.abs(a - b) >= PRESSURE_DIFFUSION_FRONTIER_DELTA_THRESHOLD;
 }
 
 function terrainMoistureVisuallyChanged(moistureBase: number, beforeDelta: number, afterDelta: number): boolean {

@@ -195,9 +195,12 @@ export function createSchedulerStats(totalChunks: number): ChunkSchedulerStats {
     diffusionNeighborChunks: 0,
     diffusionSelectedChunks: 0,
     diffusionEffectiveChunks: 0,
+    diffusionFrontierChunks: 0,
+    diffusionRetainedFrontierChunks: 0,
     diffusionDeferredChunks: 0,
     diffusionNearZeroCandidateChunks: 0,
     diffusionNearZeroSkippedChunks: 0,
+    diffusionSkippedBackgroundChunks: 0,
     lastTickPlan: null,
     lastTickReport: null
   };
