@@ -1,4 +1,11 @@
 import type { ProjectionProfileStats } from "./render/projection";
+import type { FieldOverlayProfileStats } from "./render/fieldOverlays";
+import {
+  isBaseLayer,
+  isOverlayLayer,
+  type BaseLayer,
+  type OverlayState
+} from "./render/mapViewTypes";
 import type { CoreProfileSink } from "../core/profile";
 
 export type TerrainProfilePhase =
@@ -25,11 +32,13 @@ export type TerrainProfilePhase =
   | "core.world.updateProcesses"
   | "frame.interval"
   | "frame.total"
+  | "fieldOverlay.paintCells"
   | "inspector.update"
   | "metrics.compute"
   | "metrics.domUpdate"
   | "projection.paintCells"
   | "projection.selectChunks"
+  | "render.fieldOverlay.total"
   | "render.drawImage"
   | "render.overlayAgents"
   | "render.overlayProcesses"
@@ -112,6 +121,11 @@ export type TerrainProfileValue =
   | "projection.retainedDirtyChunks"
   | "projection.retiredDirtyChunks"
   | "projection.resourceDirtyChunks"
+  | "fieldOverlay.consumedDirtyChunks"
+  | "fieldOverlay.dirtyMaskChunks"
+  | "fieldOverlay.fullRebuild"
+  | "fieldOverlay.projectedCells"
+  | "fieldOverlay.projectedChunks"
   | "runtime.backlogTicks"
   | "runtime.mode"
   | "runtime.observedTickRate"
@@ -198,6 +212,11 @@ export interface TerrainProfilerOptions {
   now?: number;
   sampleIntervalMs?: number;
   startedAt?: string;
+}
+
+export interface TerrainProfileDisplayConfig {
+  baseLayer: BaseLayer;
+  overlays: OverlayState;
 }
 
 interface ProfileCounters {
@@ -299,6 +318,15 @@ export class TerrainProfiler {
     this.recordValue("projection.retainedDirtyChunks", stats.retainedDirtyChunks);
     this.recordValue("projection.retiredDirtyChunks", stats.retiredDirtyChunks);
     this.recordValue("projection.resourceDirtyChunks", stats.resourceDirtyChunks);
+  }
+
+  recordFieldOverlay(stats: FieldOverlayProfileStats): void {
+    this.recordDuration("fieldOverlay.paintCells", stats.paintCellsMs);
+    this.recordValue("fieldOverlay.projectedChunks", stats.projectedChunks);
+    this.recordValue("fieldOverlay.projectedCells", stats.projectedCells);
+    this.recordValue("fieldOverlay.fullRebuild", stats.fullRebuild ? 1 : 0);
+    this.recordValue("fieldOverlay.consumedDirtyChunks", stats.consumedDirtyChunks);
+    this.recordValue("fieldOverlay.dirtyMaskChunks", stats.dirtyMaskChunks);
   }
 
   coreSink(): CoreProfileSink | null {
@@ -428,6 +456,32 @@ export function createTerrainProfilerFromSearch(
     detail,
     durationSeconds
   });
+}
+
+export function terrainProfileDisplayConfigFromSearch(search: string): TerrainProfileDisplayConfig {
+  const params = new URLSearchParams(search);
+  const profileBase = params.get("profileBase");
+  const baseLayer = profileBase && isBaseLayer(profileBase) ? profileBase : "terrain";
+  const overlays: OverlayState = {
+    resources: false,
+    agents: false,
+    processes: false,
+    pressure: false,
+    lineages: false
+  };
+
+  const requestedOverlays = params.get("profileOverlays") ?? "";
+  for (const value of requestedOverlays.split(",")) {
+    const overlay = value.trim();
+    if (isOverlayLayer(overlay)) {
+      overlays[overlay] = true;
+    }
+  }
+
+  return {
+    baseLayer,
+    overlays
+  };
 }
 
 export function formatTerrainProfileSample(sample: TerrainProfileSample): string {

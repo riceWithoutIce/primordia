@@ -1,4 +1,4 @@
-import type { DynamicFields, EnvironmentCell, StaticTerrain, TerrainType } from "../../core/primordia";
+import type { DynamicFields, EnvironmentCell, SimulationConfig, StaticTerrain, TerrainType } from "../../core/primordia";
 import type { BaseLayer, OverlayState } from "./mapViewTypes";
 import { BIOME_PALETTE, TERRAIN_PALETTE, mixRgb, shadeRgb, type Rgb } from "./palettes";
 
@@ -152,6 +152,10 @@ export function lineageBackgroundColor(cell: EnvironmentCell): [number, number, 
 
 export function applyResourceOverlay(color: Rgb, cell: EnvironmentCell, resourceCap: number): [number, number, number] {
   const amount = resourceCap > 0 ? Math.min(cell.resource / resourceCap, 1) : 0;
+  return applyResourceOverlayAmount(color, amount);
+}
+
+export function applyResourceOverlayAmount(color: Rgb, amount: number): [number, number, number] {
   if (amount <= 0.02) {
     return [...color] as [number, number, number];
   }
@@ -161,6 +165,10 @@ export function applyResourceOverlay(color: Rgb, cell: EnvironmentCell, resource
 
 export function applyPressureOverlay(color: Rgb, cell: EnvironmentCell): [number, number, number] {
   const amount = Math.min(cell.pressure / 4, 1);
+  return applyPressureOverlayAmount(color, amount);
+}
+
+export function applyPressureOverlayAmount(color: Rgb, amount: number): [number, number, number] {
   if (amount <= 0.02) {
     return [...color] as [number, number, number];
   }
@@ -170,6 +178,10 @@ export function applyPressureOverlay(color: Rgb, cell: EnvironmentCell): [number
 
 export function applyLineageOverlay(color: Rgb, cell: EnvironmentCell): [number, number, number] {
   const fertility = Math.min(cell.fertility, 1);
+  return applyLineageOverlayAmount(color, fertility);
+}
+
+export function applyLineageOverlayAmount(color: Rgb, fertility: number): [number, number, number] {
   return mixRgb(color, [236, 212, 104], fertility * TERRAIN_RENDER_CONFIG.lineageOverlayStrength);
 }
 
@@ -189,6 +201,20 @@ export function resourceColor(cell: EnvironmentCell, resourceCap: number): [numb
   }
 
   return color;
+}
+
+export function fertilityFromValues(
+  terrain: StaticTerrain,
+  fields: DynamicFields,
+  config: SimulationConfig,
+  index: number
+): number {
+  const moisture = terrain.moistureBase[index] + fields.moistureDelta[index] * 0.35;
+  const pressureLoad = fields.pressure[index] / 4;
+  const baseResourceFertility = config.resourceCap <= 0
+    ? 0
+    : Math.min(1, (terrain.fertilityBase[index] * (terrain.terrainType[index] === "ocean" ? 0.38 : 0.95)) / 0.9);
+  return Math.max(0, Math.min(1, baseResourceFertility * (0.72 + moisture * 0.38) * (1 - pressureLoad * 0.18)));
 }
 
 function isContour(elevation: number, config: TerrainRenderConfig): boolean {

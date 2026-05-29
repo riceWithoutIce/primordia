@@ -120,7 +120,8 @@ export function createProjection(
 }
 
 export function shouldUseTerrainProjectionFastPath(baseLayer: BaseLayer, overlays: OverlayState): boolean {
-  return baseLayer === "terrain" && !overlays.resources && !overlays.pressure && !overlays.lineages;
+  void overlays;
+  return baseLayer === "terrain";
 }
 
 export function selectProjectionChunks(

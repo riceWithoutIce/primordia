@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createTerrainProfilerFromSearch, TerrainProfiler } from "../src/app/terrainProfiler";
+import {
+  createTerrainProfilerFromSearch,
+  terrainProfileDisplayConfigFromSearch,
+  TerrainProfiler
+} from "../src/app/terrainProfiler";
 
 describe("terrain baseline profiler", () => {
   it("stays disabled unless the profile query requests it", () => {
@@ -14,6 +18,37 @@ describe("terrain baseline profiler", () => {
 
     expect(base?.coreSink()).toBeNull();
     expect(deep?.coreSink()).not.toBeNull();
+  });
+
+  it("can configure the profiled display layer from the URL", () => {
+    const baseline = terrainProfileDisplayConfigFromSearch("?profile=terrain");
+    const pressure = terrainProfileDisplayConfigFromSearch("?profile=terrain&profileOverlays=pressure");
+    const allProjectionOverlays = terrainProfileDisplayConfigFromSearch(
+      "?profile=terrain&profileOverlays=resources,pressure,lineages,unknown"
+    );
+    const pressureBase = terrainProfileDisplayConfigFromSearch("?profile=terrain&profileBase=pressure&profileOverlays=agents");
+
+    expect(baseline).toEqual({
+      baseLayer: "terrain",
+      overlays: {
+        resources: false,
+        agents: false,
+        processes: false,
+        pressure: false,
+        lineages: false
+      }
+    });
+    expect(pressure.overlays.pressure).toBe(true);
+    expect(pressure.overlays.resources).toBe(false);
+    expect(allProjectionOverlays.overlays).toEqual({
+      resources: true,
+      agents: false,
+      processes: false,
+      pressure: true,
+      lineages: true
+    });
+    expect(pressureBase.baseLayer).toBe("pressure");
+    expect(pressureBase.overlays.agents).toBe(true);
   });
 
   it("collects frame, projection, and phase summaries", () => {
@@ -45,6 +80,15 @@ describe("terrain baseline profiler", () => {
       totalChunks: 600,
       visibleDependencyMask: 8
     });
+    profiler.recordFieldOverlay({
+      consumedDirtyChunks: 2,
+      dirtyMaskChunks: 3,
+      fullRebuild: false,
+      projectedCells: 256,
+      projectedChunks: 4,
+      visibleDependencyMask: 4,
+      paintCellsMs: 0.8
+    });
     profiler.recordFrame(16, 1);
     profiler.recordPointerMove();
 
@@ -58,6 +102,9 @@ describe("terrain baseline profiler", () => {
     expect(sample?.values["projection.hiddenDirtyChunks"]?.p95).toBe(1);
     expect(sample?.values["projection.moistureDirtyChunks"]?.p95).toBe(1);
     expect(sample?.values["projection.retiredDirtyChunks"]?.p95).toBe(1);
+    expect(sample?.durations["fieldOverlay.paintCells"]?.p95).toBe(0.8);
+    expect(sample?.values["fieldOverlay.projectedChunks"]?.p95).toBe(4);
+    expect(sample?.values["fieldOverlay.projectedCells"]?.p95).toBe(256);
 
     const report = profiler.report(scenario, 1200);
     expect(report.kind).toBe("primordia.terrain-profile");

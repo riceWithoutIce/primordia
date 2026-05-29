@@ -387,14 +387,24 @@ Render rules:
 - static terrain projection may be cached until seed/config/world size changes
 - dynamic field projection updates only dirty chunks
 - agent projection updates chunks with agent dirty flags
-- terrain base projection can use a typed-array paint fast-path when resources, pressure, and lineages are not projection-baked into the image
+- terrain base projection uses a typed-array paint fast-path independent of field overlays
+- resources, pressure, and lineage/fertility visualization are separate transparent field overlays rather than base projection inputs
 - pressure/resource overlays can use lower LOD outside the viewport or when frame budget is tight
 - inspection tools must be able to request exact cell values after lazy catch-up
 - render LOD must not change simulation state or scheduler decisions
 
-Current visual-layer note: agents and processes are already drawn as separate canvas overlays, while resources, pressure, and lineages are still baked into the projection `ImageData`. This means hidden dirty debt for those visual modes can become projection paint debt when the overlays are enabled. Treat this as a future visual-layer architecture task after the warm/sleeping catch-up cadence work, not as part of the current pressure-frontier source narrowing.
-
 Phase 2.3.29 adds the first render fast-path under that boundary. Terrain-only projection now paints from `StaticTerrain` and `DynamicFields.moistureDelta` directly, avoiding per-cell `EnvironmentCell` allocation in the common terrain base view. The generic projection path remains the contract for resource, pressure, biome, and projection-baked overlay modes. The 30s terrain-only browser profile after this pass reduced `projection.paintCells p95` from about `14ms` to about `1.7ms` and `render.total p95` from about `14.8ms` to about `2.5ms`.
+
+Phase 2.3.30 removes the largest remaining visual-layer coupling. Resources, pressure, and lineages now use an independent `fieldOverlays` cache and no longer widen the base projection dependency mask. The full-world field overlay uses `4 x 4` cell sampling, so a typical dirty overlay pass touches about `15k-16k` overlay pixels instead of about `250k` full-resolution cells. Exact cell values remain available through inspector reads and simulation APIs.
+
+The pre/post browser profiles show why this is structural rather than cosmetic:
+
+- before the split, pressure overlay profile painted about `252928` projection cells and spent `render.total p95 ~166.4ms`
+- before the split, resources+pressure+lineages painted about `252928` projection cells and spent `render.total p95 ~185.7ms`
+- after the split, pressure overlay spends `render.total p95 ~3.0ms`, with `fieldOverlay.paintCells p95 ~0.4ms`
+- after the split, resources+pressure+lineages spend `render.total p95 ~4.8ms`, with `fieldOverlay.paintCells p95 ~2.4ms`
+
+Those post-split overlay-visible samples still showed noisy `sim.step p95` above the generic profile limit on that machine, but the visual-layer cost itself is no longer the bottleneck.
 
 Canvas 2D evaluation:
 

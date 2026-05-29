@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_OVERLAYS } from "../src/app/render/mapViewTypes";
+import { createFieldOverlay, selectOverlayChunks } from "../src/app/render/fieldOverlays";
 import {
   createProjection,
   selectProjectionChunks,
@@ -9,6 +10,7 @@ import {
 import { terrainColor } from "../src/app/render/mapViews";
 import {
   overlayAffectsProjection,
+  overlayDependencyMask,
   projectionDependencyMask,
   projectionOverlayKey
 } from "../src/app/render/renderDependencies";
@@ -38,7 +40,7 @@ describe("visibility-aware projection invalidation", () => {
     expect(selection.chunks).toHaveLength(0);
   });
 
-  it("reprojects pressure dirty chunks when pressure overlay is visible", () => {
+  it("keeps pressure overlay debt out of the base projection", () => {
     const sim = createCleanProjectionSimulation();
     const target = sim.world.chunks.chunks[3];
     markChunkProjectionDirty(sim.world.chunks, target.id, CHUNK_DIRTY.pressure);
@@ -46,9 +48,9 @@ describe("visibility-aware projection invalidation", () => {
 
     const selection = selectProjectionChunks(sim.world.chunks.chunks, true, dependencyMask);
 
-    expect(dependencyMask & CHUNK_DIRTY.pressure).toBe(CHUNK_DIRTY.pressure);
-    expect(selection.reasonVisibleDependency).toBe(1);
-    expect(selection.chunks).toHaveLength(1);
+    expect(dependencyMask & CHUNK_DIRTY.pressure).toBe(0);
+    expect(selection.reasonVisibleDependency).toBe(0);
+    expect(selection.chunks).toHaveLength(0);
   });
 
   it("reprojects pressure dirty chunks when pressure is the base layer", () => {
@@ -64,7 +66,7 @@ describe("visibility-aware projection invalidation", () => {
     expect(selection.chunks).toHaveLength(1);
   });
 
-  it("reprojects resource dirty chunks when the resource overlay is visible", () => {
+  it("keeps resource overlay debt out of the base projection", () => {
     const sim = createCleanProjectionSimulation();
     const target = sim.world.chunks.chunks[3];
     markChunkProjectionDirty(sim.world.chunks, target.id, CHUNK_DIRTY.resource);
@@ -72,9 +74,9 @@ describe("visibility-aware projection invalidation", () => {
 
     const selection = selectProjectionChunks(sim.world.chunks.chunks, true, dependencyMask);
 
-    expect(dependencyMask & CHUNK_DIRTY.resource).toBe(CHUNK_DIRTY.resource);
-    expect(selection.reasonVisibleDependency).toBe(1);
-    expect(selection.chunks).toHaveLength(1);
+    expect(dependencyMask & CHUNK_DIRTY.resource).toBe(0);
+    expect(selection.reasonVisibleDependency).toBe(0);
+    expect(selection.chunks).toHaveLength(0);
   });
 
   it("describes dependency masks without runtime canvas overlays", () => {
@@ -103,13 +105,24 @@ describe("visibility-aware projection invalidation", () => {
       processes: true
     };
 
-    expect(projectionOverlayKey(runtimeOverlays)).toBe(projectionOverlayKey(backgroundOnly));
+    expect(projectionOverlayKey(runtimeOverlays)).toBe("base");
+    expect(projectionOverlayKey(backgroundOnly)).toBe("base");
+    expect(overlayAffectsProjection("resources")).toBe(false);
+    expect(overlayAffectsProjection("pressure")).toBe(false);
+    expect(overlayAffectsProjection("lineages")).toBe(false);
     expect(overlayAffectsProjection("agents")).toBe(false);
     expect(overlayAffectsProjection("processes")).toBe(false);
   });
 
-  it("tracks lineage overlay fertility dependencies", () => {
-    const mask = projectionDependencyMask("terrain", {
+  it("tracks field overlay dependencies separately from base projection", () => {
+    const projectionMask = projectionDependencyMask("terrain", {
+      resources: true,
+      agents: false,
+      processes: false,
+      pressure: true,
+      lineages: true
+    });
+    const overlayMask = overlayDependencyMask("terrain", {
       resources: false,
       agents: false,
       processes: false,
@@ -117,16 +130,53 @@ describe("visibility-aware projection invalidation", () => {
       lineages: true
     });
 
-    expect(mask & CHUNK_DIRTY.moisture).toBe(CHUNK_DIRTY.moisture);
-    expect(mask & CHUNK_DIRTY.pressure).toBe(CHUNK_DIRTY.pressure);
+    expect(projectionMask).toBe(CHUNK_DIRTY.moisture);
+    expect(overlayMask & CHUNK_DIRTY.moisture).toBe(CHUNK_DIRTY.moisture);
+    expect(overlayMask & CHUNK_DIRTY.pressure).toBe(CHUNK_DIRTY.pressure);
   });
 
-  it("uses the terrain fast path only when projection overlays are absent", () => {
+  it("uses the terrain fast path for terrain base regardless of field overlays", () => {
     expect(shouldUseTerrainProjectionFastPath("terrain", { ...DEFAULT_OVERLAYS, resources: false, pressure: false })).toBe(true);
-    expect(shouldUseTerrainProjectionFastPath("terrain", { ...DEFAULT_OVERLAYS, resources: true, pressure: false })).toBe(false);
-    expect(shouldUseTerrainProjectionFastPath("terrain", { ...DEFAULT_OVERLAYS, resources: false, pressure: true })).toBe(false);
-    expect(shouldUseTerrainProjectionFastPath("terrain", { ...DEFAULT_OVERLAYS, lineages: true })).toBe(false);
+    expect(shouldUseTerrainProjectionFastPath("terrain", { ...DEFAULT_OVERLAYS, resources: true, pressure: false })).toBe(true);
+    expect(shouldUseTerrainProjectionFastPath("terrain", { ...DEFAULT_OVERLAYS, resources: false, pressure: true })).toBe(true);
+    expect(shouldUseTerrainProjectionFastPath("terrain", { ...DEFAULT_OVERLAYS, lineages: true })).toBe(true);
     expect(shouldUseTerrainProjectionFastPath("resource", { ...DEFAULT_OVERLAYS, resources: false, pressure: false })).toBe(false);
+  });
+
+  it("selects field overlay chunks without forcing base projection work", () => {
+    const sim = createCleanProjectionSimulation();
+    const target = sim.world.chunks.chunks[3];
+    markChunkProjectionDirty(sim.world.chunks, target.id, CHUNK_DIRTY.pressure);
+    const overlayMask = overlayDependencyMask("terrain", { ...DEFAULT_OVERLAYS, pressure: true });
+    const projectionMask = projectionDependencyMask("terrain", { ...DEFAULT_OVERLAYS, pressure: true });
+
+    expect(selectOverlayChunks(sim.world.chunks.chunks, true, overlayMask)).toEqual([target]);
+    expect(selectProjectionChunks(sim.world.chunks.chunks, true, projectionMask).chunks).toHaveLength(0);
+  });
+
+  it("paints field overlays into a separate transparent image and consumes overlay-only debt", () => {
+    const sim = createCleanProjectionSimulation();
+    const target = sim.world.chunks.chunks[3];
+    const index = (target.startY + 2) * sim.width + target.startX + 2;
+    sim.pressure[index] = 4;
+    markChunkProjectionDirty(sim.world.chunks, target.id, CHUNK_DIRTY.pressure);
+    const imageFactory = (width: number, height: number) =>
+      ({
+        width,
+        height,
+        data: new Uint8ClampedArray(width * height * 4)
+      }) as ImageData;
+
+    const overlay = createFieldOverlay(sim, "terrain", { ...DEFAULT_OVERLAYS, pressure: true }, null, {
+      imageFactory,
+      now: () => 0,
+      recordFieldOverlay: () => undefined
+    });
+
+    expect(overlay).not.toBeNull();
+    const overlayIndex = Math.floor((target.startY + 2) / 4) * overlay!.width + Math.floor((target.startX + 2) / 4);
+    expect(overlay?.image.data[overlayIndex * 4 + 3]).toBeGreaterThan(0);
+    expect(target.projectionDirtyMask & CHUNK_DIRTY.pressure).toBe(0);
   });
 
   it("matches generic terrain cell color when using the terrain projection fast path", () => {

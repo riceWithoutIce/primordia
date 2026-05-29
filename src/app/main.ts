@@ -17,8 +17,10 @@ import {
 } from "./render/mapViewTypes";
 import { createProjection, worldToScreenCell, type ProjectionCache } from "./render/projection";
 import { overlayAffectsProjection } from "./render/renderDependencies";
+import { createFieldOverlay, type FieldOverlayCache } from "./render/fieldOverlays";
 import {
   createTerrainProfilerFromSearch,
+  terrainProfileDisplayConfigFromSearch,
   type TerrainProfilePhase,
   type TerrainProfileReport,
   type TerrainProfiler,
@@ -39,6 +41,7 @@ let overlays: OverlayState = { ...DEFAULT_OVERLAYS };
 let renderBuffer: HTMLCanvasElement | null = null;
 let renderBufferCtx: CanvasRenderingContext2D | null = null;
 let projectionCache: ProjectionCache | null = null;
+let fieldOverlayCache: FieldOverlayCache | null = null;
 let observedTickRate = 0;
 let runtimeMode: RuntimeMode = "realtime";
 let lastRuntimeStatsAt = 0;
@@ -172,6 +175,7 @@ for (const button of baseLayerButtons) {
     if (isBaseLayer(nextBaseLayer)) {
       baseLayer = nextBaseLayer;
       projectionCache = null;
+      fieldOverlayCache = null;
       for (const item of baseLayerButtons) {
         item.classList.toggle("active", item === button);
       }
@@ -191,6 +195,7 @@ for (const input of overlayInputs) {
       if (overlayAffectsProjection(overlay)) {
         projectionCache = null;
       }
+      fieldOverlayCache = null;
       render();
     }
   });
@@ -239,15 +244,11 @@ function getCanvasContext(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingCo
 }
 
 function configureTerrainProfileBaseline(): void {
-  baseLayer = "terrain";
-  overlays = {
-    resources: false,
-    agents: false,
-    processes: false,
-    pressure: false,
-    lineages: false
-  };
+  const profileDisplay = terrainProfileDisplayConfigFromSearch(window.location.search);
+  baseLayer = profileDisplay.baseLayer;
+  overlays = profileDisplay.overlays;
   projectionCache = null;
+  fieldOverlayCache = null;
 
   for (const button of baseLayerButtons) {
     button.classList.toggle("active", button.dataset.baseLayer === baseLayer);
@@ -259,7 +260,14 @@ function configureTerrainProfileBaseline(): void {
     }
   }
 
-  console.info("[terrain-profile] enabled: base=terrain, overlays=off");
+  console.info(`[terrain-profile] enabled: base=${baseLayer}, overlays=${profileOverlayLabel(overlays)}`);
+}
+
+function profileOverlayLabel(state: OverlayState): string {
+  const enabled = Object.entries(state)
+    .filter(([, active]) => active)
+    .map(([overlay]) => overlay);
+  return enabled.length > 0 ? enabled.join(",") : "off";
 }
 
 function exposeTerrainProfileReport(profiler: TerrainProfiler): void {
@@ -292,6 +300,20 @@ function render(): void {
   const renderStart = profileNow();
   const cellW = canvas.width / sim.width;
   const cellH = canvas.height / sim.height;
+  let activeFieldOverlayBuffer: HTMLCanvasElement | null = null;
+  const fieldOverlayStart = profileNow();
+  fieldOverlayCache = createFieldOverlay(sim, baseLayer, overlays, fieldOverlayCache, terrainProfiler);
+  if (fieldOverlayCache) {
+    const overlay = getFieldOverlayBuffer(fieldOverlayCache.width, fieldOverlayCache.height);
+    const overlayBuffer = overlay.buffer;
+    const overlayBufferCtx = overlay.bufferCtx;
+    overlayBufferCtx.clearRect(0, 0, fieldOverlayCache.width, fieldOverlayCache.height);
+    overlayBufferCtx.putImageData(fieldOverlayCache.image, 0, 0);
+    overlayBufferCtx.imageSmoothingEnabled = false;
+    activeFieldOverlayBuffer = overlayBuffer;
+  }
+  recordProfileDuration("render.fieldOverlay.total", fieldOverlayStart);
+
   const projectionStart = profileNow();
   projectionCache = createProjection(sim, baseLayer, overlays, projectionCache, terrainProfiler);
   recordProfileDuration("render.projection.total", projectionStart);
@@ -306,6 +328,11 @@ function render(): void {
   const drawImageStart = profileNow();
   ctx.drawImage(buffer, 0, 0, canvas.width, canvas.height);
   recordProfileDuration("render.drawImage", drawImageStart);
+
+  if (activeFieldOverlayBuffer) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(activeFieldOverlayBuffer, 0, 0, canvas.width, canvas.height);
+  }
 
   if (overlays.agents) {
     const agentsStart = profileNow();
@@ -345,6 +372,26 @@ function getRenderBuffer(width: number, height: number): { buffer: HTMLCanvasEle
   }
 
   return { buffer: renderBuffer, bufferCtx: renderBufferCtx };
+}
+
+let fieldOverlayBuffer: HTMLCanvasElement | null = null;
+let fieldOverlayBufferCtx: CanvasRenderingContext2D | null = null;
+
+function getFieldOverlayBuffer(width: number, height: number): { buffer: HTMLCanvasElement; bufferCtx: CanvasRenderingContext2D } {
+  if (!fieldOverlayBuffer || !fieldOverlayBufferCtx) {
+    fieldOverlayBuffer = document.createElement("canvas");
+    fieldOverlayBufferCtx = fieldOverlayBuffer.getContext("2d");
+    if (!fieldOverlayBufferCtx) {
+      throw new Error("Could not create field overlay buffer");
+    }
+  }
+
+  if (fieldOverlayBuffer.width !== width || fieldOverlayBuffer.height !== height) {
+    fieldOverlayBuffer.width = width;
+    fieldOverlayBuffer.height = height;
+  }
+
+  return { buffer: fieldOverlayBuffer, bufferCtx: fieldOverlayBufferCtx };
 }
 
 function drawAgent(agent: Agent, cellW: number, cellH: number): void {

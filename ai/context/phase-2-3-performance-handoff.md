@@ -244,6 +244,23 @@ After the Phase 2.3.29 terrain projection paint fast-path:
 - A 30s browser terrain-only deep profile at `http://127.0.0.1:5174/?profile=terrain&profileDetail=deep&profileSeconds=30` passed: `sim.step p50/p95 ~19.6ms/29.0ms`, `runtime.backlogTicks p95 ~1.0`, `render.total p95 ~2.5ms`, `render.projection.total p95 ~1.7ms`, `projection.paintCells p95 ~1.7ms`, `projection.projectedChunks p95 25`, `projection.projectedCells p95 25600`, effective cadence `8/32`.
 - The terrain-only acceptance profile is now green. The next validation gap is pressure-visible/profile overlays, especially resources/pressure/lineages because they still use projection-baked visual layers.
 
+After the Phase 2.3.30 field overlay split:
+
+- Added profile URL controls so browser runs can reproduce display states without manual UI clicking: `profileOverlays=pressure`, `profileOverlays=resources,pressure,lineages`, and optional `profileBase=pressure`.
+- The pre-fix 30s overlay-visible profiles confirmed the visual-layer problem was render-side, not pressure diffusion:
+  - pressure overlay: `sim.step p50/p95 ~16.7ms/20.2ms`, but `render.total p95 ~166.4ms`, `projection.paintCells p95 ~165.5ms`, `projection.projectedChunks p95 247`, `projection.projectedCells p95 252928`.
+  - resources+pressure+lineages overlays: `sim.step p50/p95 ~16.6ms/20.1ms`, but `render.total p95 ~185.7ms`, `projection.paintCells p95 ~184.7ms`, `projection.projectedChunks p95 247`.
+- Resources, pressure, and lineages are no longer baked into the base projection `ImageData`. They now render through `src/app/render/fieldOverlays.ts` as a separate transparent field overlay cache.
+- Base projection dependency is again only the base layer dependency. Overlay dependency is tracked separately by `overlayDependencyMask`, and field overlay debt can be consumed without forcing base projection work.
+- The field overlay layer uses `4 x 4` world-cell sampling for the full-world view. Inspector and simulation state remain exact; this LOD applies only to the visual overlay.
+- Terrain base projection now keeps the typed-array fast path even when field overlays are visible.
+- New profiler counters expose `fieldOverlay.projectedChunks`, `fieldOverlay.projectedCells`, `fieldOverlay.fullRebuild`, `fieldOverlay.consumedDirtyChunks`, `fieldOverlay.dirtyMaskChunks`, and the `fieldOverlay.paintCells` / `render.fieldOverlay.total` phases.
+- `npm run check` passed with `100` tests; `npm run build` passed.
+- `npm run bench:core` completed with initialize `~3292.63ms`, cold `step(16)` `~3419.01ms`, hot `step(16)` `~379.53ms`, hot snapshot stride 48 `~3.1503ms`.
+- A 30s post-fix pressure-overlay profile reduced render cost to `render.total p95 ~3.0ms`, `render.projection.total p95 ~1.6ms`, `fieldOverlay.paintCells p95 ~0.4ms`, `fieldOverlay.projectedCells p95 15616`, with stable backlog. The sample still failed its generic assessment because `sim.step p95 ~39.1ms` on that run, but render was comfortably under budget.
+- A 30s post-fix resources+pressure+lineages profile reduced render cost to `render.total p95 ~4.8ms`, `render.projection.total p95 ~1.5ms`, `fieldOverlay.paintCells p95 ~2.4ms`, `fieldOverlay.projectedCells p95 15744`, with stable backlog. The sample still failed its generic assessment because `sim.step p95 ~41.2ms`; treat that as the next core/browser variance item, not an overlay-render regression.
+- Screenshot validation showed the low-resolution field overlay visibly composited over the terrain base map.
+
 ## Historical Profile Superseded By Current Baseline
 
 Scenario:

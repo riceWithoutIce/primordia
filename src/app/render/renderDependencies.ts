@@ -5,8 +5,20 @@ import type { BaseLayer, OverlayLayer, OverlayState } from "./mapViewTypes";
 export const STATIC_PROJECTION_DEPENDENCY = 0;
 
 export function projectionDependencyMask(baseLayer: BaseLayer, overlays: OverlayState): number {
-  let mask = baseLayerDependencyMask(baseLayer);
+  return baseLayerDependencyMask(baseLayer);
+}
 
+export function projectionOverlayKey(overlays: OverlayState): string {
+  void overlays;
+  return "base";
+}
+
+export function overlayAffectsProjection(overlay: OverlayLayer): boolean {
+  return false;
+}
+
+export function overlayDependencyMask(baseLayer: BaseLayer, overlays: OverlayState): number {
+  let mask = 0;
   if (overlays.resources && baseLayer !== "resource") {
     mask |= CHUNK_DIRTY.resource;
   }
@@ -16,16 +28,7 @@ export function projectionDependencyMask(baseLayer: BaseLayer, overlays: Overlay
   if (overlays.lineages) {
     mask |= CHUNK_DIRTY.moisture | CHUNK_DIRTY.pressure;
   }
-
   return mask;
-}
-
-export function projectionOverlayKey(overlays: OverlayState): string {
-  return `${overlays.resources ? 1 : 0}${overlays.pressure ? 1 : 0}${overlays.lineages ? 1 : 0}`;
-}
-
-export function overlayAffectsProjection(overlay: OverlayLayer): boolean {
-  return overlay === "resources" || overlay === "pressure" || overlay === "lineages";
 }
 
 export function chunkAffectsProjection(chunk: ChunkRecord, dependencyMask: number, canReuse: boolean): boolean {
